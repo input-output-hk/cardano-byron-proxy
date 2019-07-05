@@ -1,0 +1,128 @@
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/fda38e60007a019c0c8569e8a0fc08f2102c92cc/snapshot.yaml
+
+packages:
+  - .
+
+extra-deps:
+  - git: https://github.com/input-output-hk/iohk-monitoring-framework
+    commit: 3ac2191fc4c68b46b7f6c08e2873f71949cc68e7
+    subdirs:
+      - iohk-monitoring
+      - contra-tracer
+
+  - git: https://github.com/input-output-hk/cardano-base
+    commit: 14f9b09920813447a4060b6810bf17fc4ea35840
+    subdirs:
+      - binary
+      - binary/test
+      - cardano-crypto-class
+
+  - git: https://github.com/input-output-hk/cardano-ledger
+    commit: b81e722c28ed7d65d93c70b43ea744afd95ea1c3
+    subdirs:
+      - cardano-ledger
+      - cardano-ledger/test
+      - crypto
+      - crypto/test
+
+  - git: https://github.com/input-output-hk/cardano-prelude
+    commit: fda38e60007a019c0c8569e8a0fc08f2102c92cc
+    subdirs:
+      - .
+      - test
+
+  - git: https://github.com/input-output-hk/cardano-shell
+    commit: 92e6b42167d1399971df788b691423222722c2f6
+
+  - git: https://github.com/input-output-hk/cardano-sl-x509
+    commit: ec96c64c665b741c17b4e38f611315bae9b0b054
+
+  - git: https://github.com/input-output-hk/ouroboros-network
+    commit: f132a47c7d8711cc2c0457c62509fa1dbcb9347c
+    subdirs:
+      - io-sim-classes
+      - network-mux
+      - ouroboros-consensus
+      - ouroboros-network
+      - typed-protocols
+      - typed-protocols-cbor
+
+  - bimap-0.4.0
+  - time-units-1.0.0
+  - ekg-prometheus-adapter-0.1.0.4
+  - prometheus-2.1.1
+  - containers-0.5.11.0
+  - graphviz-2999.20.0.3@sha256:cde383c356bc41136ed53cd27e0800f46dbd2185600dd0de18d66d5c49739d94
+  - quickcheck-state-machine-0.6.0@sha256:3e4f8df0f6b5d415e3c8840dc75034a63e37f56f5f8cfa1035ded16345235ac4
+  - splitmix-0.0.2
+  - libsystemd-journal-1.4.4
+  - tasty-hedgehog-1.0.0.1
+
+  # Windows only
+  - Win32-2.5.4.1
+
+  # The parts of cardano-sl that are needed for the byron proxy.
+  - git: https://github.com/input-output-hk/cardano-sl
+    commit: 16f5095cbf5d1128e379b44c10ff4114253cefb9
+    subdirs:
+      - lib
+      - binary
+      - binary/test
+      - util
+      - util/test
+      - infra
+      - infra/test
+      - core
+      - core/test
+      - chain
+      - chain/test
+      - db
+      - db/test
+      - crypto
+      - crypto/test
+      - networking
+
+  - git: https://github.com/input-output-hk/cardano-report-server
+    commit: 93f2246c54436e7f98cc363b4e0f8f1cb5e78717
+
+  - git: https://github.com/input-output-hk/log-warper
+    commit: 16246d4fbf16da7984f2a4b6c42f2ed5098182e4
+
+  - git: https://github.com/input-output-hk/rocksdb-haskell-ng
+    commit: 49f501a082d745f3b880677220a29cafaa181452
+
+  - git: https://github.com/avieth/kademlia
+    commit: 38a0575bb303804461f4b6176ca38eba81adbd79
+
+  - git: https://github.com/serokell/network-transport
+    commit: 018a50b9042c2115c3ec9c9fd5ca5f28737dd29c
+
+  - git: https://github.com/avieth/network-transport-tcp
+    commit: 2634e5e32178bb0456d800d133f8664321daa2ef
+
+  - git: https://github.com/avieth/network-transport-inmemory
+    commit: 5d8ff2b07b9df35cf61329a3d975e2c8cf95c12a
+
+  - git: https://github.com/input-output-hk/universum.git
+    commit: 7f1b2483f71cacdfd032fe447064d6e0a1df50fc
+
+  - git: https://github.com/input-output-hk/serokell-util.git
+    commit: 42586f5ea157b4a5411fbcbe41d1bf28bd942438
+
+  - git: https://github.com/input-output-hk/ether.git
+    commit: a311878ae17ed5f201421bdcd5392a24b746ff0b
+
+  - git: https://github.com/input-output-hk/transformers-lift.git
+    commit: c830bc7e7e41895e3c50488a92d34405b68b4ad8
+  - aeson-options-0.1.0
+  - pvss-0.2.0
+  - lrucache-1.2.0.1
+  - writer-cps-mtl-0.1.1.6
+  - writer-cps-transformers-0.5.6.0
+  - o-clock-1.0.0.1
+  - ekg-wai-0.1.0.3
+  - lzma-clib-5.2.2
+
+
+nix:
+  shell-file: nix/stack-shell.nix

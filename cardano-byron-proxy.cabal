@@ -1,8 +1,8 @@
-name:                byron-proxy
+name:                cardano-byron-proxy
 version:             0.1.0.0
 synopsis:            Adapter for the Byron net
 -- description:
-homepage:            https://github.com/input-output-hk/ouroboros-network
+homepage:            https://github.com/input-output-hk/cardano-byron-proxy
 license:             BSD3
 license-file:        LICENSE
 author:              Alexander Vieth
@@ -68,7 +68,7 @@ library
   ghc-options:         -fwarn-incomplete-patterns
                        -fwarn-unused-imports
 
-executable byron-proxy
+executable cardano-byron-proxy
   main-is:             Main.hs
   other-modules:       Byron,
                        DB,
@@ -79,7 +79,7 @@ executable byron-proxy
   -- other-extensions:
   build-depends:       base,
                        async,
-                       byron-proxy,
+                       cardano-byron-proxy,
                        bytestring,
                        cardano-binary,
                        cardano-ledger,
@@ -120,7 +120,7 @@ executable validator
   other-modules:       Logging
   -- other-extensions:
   build-depends:       base,
-                       byron-proxy,
+                       cardano-byron-proxy,
                        cardano-binary,
                        cardano-crypto-wrapper,
                        cardano-ledger,
