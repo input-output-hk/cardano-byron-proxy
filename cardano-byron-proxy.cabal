@@ -3,11 +3,11 @@ version:             0.1.0.0
 synopsis:            Adapter for the Byron net
 -- description:
 homepage:            https://github.com/input-output-hk/cardano-byron-proxy
-license:             BSD3
+license:             Apache-2.0
 license-file:        LICENSE
-author:              Alexander Vieth
-maintainer:          alex@well-typed.com
--- copyright:
+author:              IOHK Engineering Team
+maintainer:          operations@iohk.io
+copyright:           (c) 2019 IOHK
 category:            Ouroboros
 build-type:          Simple
 extra-source-files:  ChangeLog.md
