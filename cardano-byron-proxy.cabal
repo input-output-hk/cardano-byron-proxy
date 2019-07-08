@@ -6,7 +6,6 @@ homepage:            https://github.com/input-output-hk/cardano-byron-proxy
 license:             Apache-2.0
 license-file:
   LICENSE
-  NOTICE
 author:              IOHK Engineering Team
 maintainer:          operations@iohk.io
 copyright:           (c) 2019 IOHK

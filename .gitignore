@@ -1,3 +1,9 @@
 cabal.project.local
 dist-newstyle/
 .stack-work/
+launch*
+result*
+db-byron-proxy-*
+index-byron-proxy-*
+launch-*
+.stack-to-nix.cache
