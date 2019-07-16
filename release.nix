@@ -53,11 +53,11 @@ commonLib.pkgs.lib.mapAttrsRecursiveCond
   # The required jobs that must pass for ci not to fail:
   required-name = "required";
   extraBuilds = {
-    tests = default.tests;
+    inherit (default) nixosTests;
   };
   required-targets = jobs: [
     # targets are specified using above nomenclature:
     jobs.nix-tools.exes.cardano-byron-proxy.x86_64-linux
-    (builtins.concatLists (map builtins.attrValues (builtins.attrValues jobs.tests)))
+    (builtins.concatLists (map builtins.attrValues (builtins.attrValues jobs.nixosTests)))
   ];
 } (builtins.removeAttrs args ["cardano-byron-proxy"]))
