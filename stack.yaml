@@ -1,17 +1,17 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/fda38e60007a019c0c8569e8a0fc08f2102c92cc/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/faf5ba333c7e6f1710a355d5af0abbaec696dfd1/snapshot.yaml
 
 packages:
   - .
 
 extra-deps:
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: 3ac2191fc4c68b46b7f6c08e2873f71949cc68e7
+    commit: bd31cd2f3922010ddb76bb869f29c4e63bb8001b
     subdirs:
       - iohk-monitoring
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 14f9b09920813447a4060b6810bf17fc4ea35840
+    commit: 6b808ad5506cb097cdf5832e1cd5cad0c83c58d6
     subdirs:
       - binary
       - binary/test
@@ -26,7 +26,7 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: fda38e60007a019c0c8569e8a0fc08f2102c92cc
+    commit: faf5ba333c7e6f1710a355d5af0abbaec696dfd1
     subdirs:
       - .
       - test
@@ -48,6 +48,7 @@ extra-deps:
       - typed-protocols-cbor
 
   - bimap-0.4.0
+  - binary-0.8.7.0
   - time-units-1.0.0
   - ekg-prometheus-adapter-0.1.0.4
   - prometheus-2.1.1
@@ -57,13 +58,14 @@ extra-deps:
   - splitmix-0.0.2
   - libsystemd-journal-1.4.4
   - tasty-hedgehog-1.0.0.1
+  - generic-monoid-0.1.0.0
 
   # Windows only
   - Win32-2.5.4.1
 
   # The parts of cardano-sl that are needed for the byron proxy.
   - git: https://github.com/input-output-hk/cardano-sl
-    commit: 16f5095cbf5d1128e379b44c10ff4114253cefb9
+    commit: 95c03f565e6f1ab1b863bcfb13638333851e6c75
     subdirs:
       - lib
       - binary
@@ -81,9 +83,6 @@ extra-deps:
       - crypto
       - crypto/test
       - networking
-
-  - git: https://github.com/input-output-hk/cardano-report-server
-    commit: 93f2246c54436e7f98cc363b4e0f8f1cb5e78717
 
   - git: https://github.com/input-output-hk/log-warper
     commit: 16246d4fbf16da7984f2a4b6c42f2ed5098182e4
@@ -103,17 +102,18 @@ extra-deps:
   - git: https://github.com/avieth/network-transport-inmemory
     commit: 5d8ff2b07b9df35cf61329a3d975e2c8cf95c12a
 
-  - git: https://github.com/input-output-hk/universum.git
-    commit: 7f1b2483f71cacdfd032fe447064d6e0a1df50fc
+  - git: https://github.com/input-output-hk/universum
+    commit: 15f7db758ff5a24b874de2247f6f7a4576562da5
 
-  - git: https://github.com/input-output-hk/serokell-util.git
-    commit: 42586f5ea157b4a5411fbcbe41d1bf28bd942438
+  - git: https://github.com/input-output-hk/serokell-util
+    commit: 457f1d149c6e238841f283a1faf7bc8fb021b27d
 
-  - git: https://github.com/input-output-hk/ether.git
+  - git: https://github.com/input-output-hk/ether
     commit: a311878ae17ed5f201421bdcd5392a24b746ff0b
 
-  - git: https://github.com/input-output-hk/transformers-lift.git
+  - git: https://github.com/input-output-hk/transformers-lift
     commit: c830bc7e7e41895e3c50488a92d34405b68b4ad8
+
   - aeson-options-0.1.0
   - pvss-0.2.0
   - lrucache-1.2.0.1
