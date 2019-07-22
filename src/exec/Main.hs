@@ -6,33 +6,60 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE PatternSynonyms #-}
+
+{-# LANGUAGE TypeFamilies #-}
 
 import Control.Concurrent.Async (concurrently)
+import Control.Exception (throwIO)
 import Control.Monad (void)
-import Control.Tracer (Tracer (..), contramap)
+import Control.Monad.Trans.Except (runExceptT)
+import Control.Tracer (Tracer (..), contramap, traceWith)
+import Data.Coerce (coerce)
+import qualified Data.Fixed as Fixed (resolution)
 import Data.Functor.Contravariant (Op (..))
 import Data.List (intercalate)
+import qualified Data.Map as Map (fromList)
+import qualified Data.HashMap.Strict as HashMap (toList)
+import qualified Data.Reflection as Reflection (give)
 import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy.Builder as Text
+import Data.Time.Clock (NominalDiffTime, UTCTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Data.Word (Word16)
+import Numeric.Natural (Natural)
 import qualified Options.Applicative as Opt
+import System.FilePath (takeDirectory)
+import System.IO.Error (userError)
 
 import qualified Cardano.BM.Data.Aggregated as Monitoring
 import qualified Cardano.BM.Data.LogItem as Monitoring
 import qualified Cardano.BM.Data.Severity as Monitoring
 
+import qualified Cardano.Binary as Binary (Annotated (..))
+import qualified Cardano.Chain.Common as Cardano
+import qualified Cardano.Chain.Delegation as Cardano
+import qualified Cardano.Chain.Delegation (signature)
+import qualified Cardano.Chain.Genesis as Cardano
 import qualified Cardano.Chain.Slotting as Cardano
+import qualified Cardano.Chain.Update as Cardano
+import qualified Cardano.Crypto as Cardano
 
 import qualified Pos.Chain.Block as CSL (genesisBlock0)
+import qualified Pos.Chain.Block as CSL (recoveryHeadersMessage, streamWindow,
+                                         withBlockConfiguration)
+import qualified Pos.Chain.Delegation as CSL
 import qualified Pos.Chain.Lrc as CSL (genesisLeaders)
-import qualified Pos.Chain.Block as CSL (recoveryHeadersMessage, streamWindow)
-import qualified Pos.Chain.Update as CSL (lastKnownBlockVersion, updateConfiguration)
-import qualified Pos.Configuration as CSL (networkConnectionTimeout)
 import qualified Pos.Chain.Genesis as CSL.Genesis (Config)
-import qualified Pos.Chain.Genesis as CSL (configEpochSlots, configGenesisHash,
-                                           configProtocolConstants, configProtocolMagic,
-                                           configBlockVersionData)
+import qualified Pos.Chain.Genesis as CSL
+import qualified Pos.Chain.Update as CSL
+import qualified Pos.Chain.Ssc as CSL (withSscConfiguration)
+import qualified Pos.Configuration as CSL (networkConnectionTimeout, withNodeConfiguration)
+import qualified Pos.Core.Common as CSL
+import qualified Pos.Core.Slotting as CSL
+import qualified Pos.Crypto as CSL
 import qualified Pos.Diffusion.Full as CSL (FullDiffusionConfiguration (..))
 
 import qualified Pos.Infra.Network.CLI as CSL (NetworkConfigOpts (..),
@@ -41,20 +68,28 @@ import qualified Pos.Infra.Network.CLI as CSL (NetworkConfigOpts (..),
                                                listenNetworkAddressOption)
 import Pos.Infra.Network.Types (NetworkConfig (..))
 import qualified Pos.Infra.Network.Policy as Policy
-import qualified Pos.Launcher.Configuration as CSL (ConfigurationOptions (..),
-                                                    HasConfigurations,
-                                                    withConfigurations)
+import qualified Pos.Launcher.Configuration as CSL (Configuration (..),
+                                                    ConfigurationOptions (..),
+                                                    HasConfigurations)
 import qualified Pos.Client.CLI.Options as CSL (configurationOptionsParser)
+import qualified Pos.Util.Config as CSL (parseYamlConfig)
 
 import Pos.Util.Trace (Trace)
 import qualified Pos.Util.Trace.Named as Trace (LogNamed (..), appendName, named)
 import qualified Pos.Util.Trace
 import qualified Pos.Util.Wlog as Wlog
 
-import Ouroboros.Network.Block (SlotNo (..))
-
-import qualified Ouroboros.Byron.Proxy.DB as DB
+import Ouroboros.Byron.Proxy.Block (Block)
+import Ouroboros.Byron.Proxy.Index.Types (Index)
 import Ouroboros.Byron.Proxy.Main
+import Ouroboros.Consensus.Block (GetHeader (Header))
+import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
+import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
+import Ouroboros.Network.Block (SlotNo (..), Point (..))
+import Ouroboros.Network.Point (WithOrigin (..))
+import qualified Ouroboros.Network.Point as Point (Block (..))
+import Ouroboros.Storage.ChainDB.API (ChainDB)
+import Ouroboros.Storage.ChainDB.Impl.Types (TraceEvent (..), TraceAddBlockEvent (..), TraceValidationEvent (..))
 
 import qualified Byron
 import DB (DBConfig (..), withDB)
@@ -245,14 +280,16 @@ cliParserInfo = Opt.info cliParser infoMod
 -- stuff, because the client may need to hit a Byron server using the logic
 -- and diffusion layer. This is OK: run it under a `withConfigurations`.
 runClient
-  :: ( CSL.HasConfigurations )
+  :: ( CSL.HasConfigurations, ByronGiven )
   => Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
   -> ClientOptions
   -> CSL.Genesis.Config
+  -> Cardano.ProtocolMagicId
   -> Cardano.EpochSlots
-  -> DB.DB IO
+  -> Index IO (Header (Block ByronConfig))
+  -> ChainDB IO (Block ByronConfig)
   -> IO ()
-runClient tracer clientOptions genesisConfig epochSlots db =
+runClient tracer clientOptions genesisConfig pm epochSlots idx db =
 
   case coByron clientOptions of
 
@@ -273,6 +310,7 @@ runClient tracer clientOptions genesisConfig epochSlots db =
           bpc = ByronProxyConfig
             { bpcAdoptedBVData = CSL.configBlockVersionData genesisConfig
               -- ^ Hopefully that never needs to change.
+            , bpcEpochSlots = epochSlots
             , bpcNetworkConfig = networkConfig
                 { ncEnqueuePolicy = Policy.defaultEnqueuePolicyRelay
                 , ncDequeuePolicy = Policy.defaultDequeuePolicyRelay
@@ -300,7 +338,7 @@ runClient tracer clientOptions genesisConfig epochSlots db =
           genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
                                            (CSL.configGenesisHash genesisConfig)
                                            (CSL.genesisLeaders genesisConfig)
-      withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc db $ \bp -> void $
+      withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc idx db $ \bp -> void $
         concurrently (byronClient genesisBlock bp) shelleyClient
 
   where
@@ -309,18 +347,206 @@ runClient tracer clientOptions genesisConfig epochSlots db =
   -- Always announce the header to Byron peers.
   byronClient genesisBlock bp = case coShelley clientOptions of
     Nothing -> void $ concurrently
-      (Byron.download textTracer genesisBlock epochSlots db bp)
-      (Byron.announce textTracer Nothing                 db bp)
-    Just _  -> Byron.announce textTracer Nothing db bp
+      (Byron.download textTracer genesisBlock epochSlots db bp k)
+      -- TODO turn announce back on, but don't do it for _every_ tip change.
+      -- Do it at most once every slot duration, maybe.
+      (Byron.announce Nothing                            db bp `seq` pure ())
+      where
+      k _ _ = pure ()
+    Just _  -> Byron.announce Nothing db bp
 
   shelleyClient = case coShelley clientOptions of
     Nothing -> pure ()
-    Just options -> Shelley.Client.runClient options textTracer epochSlots db
+    Just options -> Shelley.Client.runClient options textTracer pm epochSlots db
 
   textTracer :: Tracer IO Text.Builder
   textTracer = contramap
     (\tbuilder -> (Text.pack "main.client", Monitoring.Info, tbuilder))
     tracer
+
+-- TODO move all of this legacy-to-new conversion stuff to one new module.
+
+convertStaticConfig :: CSL.StaticConfig -> Cardano.StaticConfig
+convertStaticConfig cslConfig = case cslConfig of
+  CSL.GCSrc fp hash -> Cardano.GCSrc fp (convertHash hash)
+  CSL.GCSpec gspec  -> Cardano.GCSpec (convertGenesisSpec gspec)
+
+convertHash :: CSL.AbstractHash algo a -> Cardano.AbstractHash algo b
+convertHash (CSL.AbstractHash it) = Cardano.AbstractHash it
+
+convertRequiresNetworkMagic :: CSL.RequiresNetworkMagic -> Cardano.RequiresNetworkMagic
+convertRequiresNetworkMagic rnm = case rnm of
+  CSL.RequiresNoMagic -> Cardano.RequiresNoMagic
+  CSL.RequiresMagic   -> Cardano.RequiresMagic
+
+convertProtocolMagic :: CSL.ProtocolMagic -> Cardano.ProtocolMagic
+convertProtocolMagic pm = Cardano.AProtocolMagic
+  { Cardano.getAProtocolMagicId = Binary.Annotated (convertProtocolMagicId pmid) ()
+  , Cardano.getRequiresNetworkMagic = convertRequiresNetworkMagic rnm
+  }
+  where
+  pmid = CSL.getProtocolMagicId pm
+  rnm = CSL.getRequiresNetworkMagic pm
+
+convertProtocolMagicId :: CSL.ProtocolMagicId -> Cardano.ProtocolMagicId
+convertProtocolMagicId pmid = Cardano.ProtocolMagicId (fromIntegral (CSL.unProtocolMagicId pmid))
+
+convertAvvmDistr :: CSL.GenesisAvvmBalances -> Cardano.GenesisAvvmBalances
+convertAvvmDistr = Cardano.GenesisAvvmBalances . Map.fromList . fmap convertPair . HashMap.toList . CSL.getGenesisAvvmBalances
+  where
+  convertPair :: (CSL.RedeemPublicKey, CSL.Coin) -> (Cardano.RedeemVerificationKey, Cardano.Lovelace)
+  convertPair (pubkey, coin) = (convertRedeemPublicKey pubkey, convertCoin coin)
+
+convertRedeemPublicKey :: CSL.RedeemPublicKey -> Cardano.RedeemVerificationKey
+convertRedeemPublicKey (CSL.RedeemPublicKey pubkey) = Cardano.RedeemVerificationKey pubkey
+
+convertHeavyDelegation :: CSL.GenesisDelegation -> Cardano.GenesisDelegation
+convertHeavyDelegation = Cardano.UnsafeGenesisDelegation . Map.fromList . fmap convertPair . HashMap.toList . CSL.unGenesisDelegation
+  where
+  convertPair :: (CSL.StakeholderId, CSL.ProxySKHeavy) -> (Cardano.KeyHash, Cardano.Certificate)
+  convertPair (sid, psk) = (convertStakeholderId sid, convertProxySKHeavy psk)
+
+convertStakeholderId :: CSL.StakeholderId -> Cardano.KeyHash
+convertStakeholderId = coerce . convertAddressHash
+
+convertAddressHash :: CSL.AddressHash algo -> Cardano.AddressHash algo
+convertAddressHash (CSL.AbstractHash digest) = Cardano.AbstractHash digest
+
+convertProxySKHeavy :: CSL.ProxySKHeavy -> Cardano.Certificate
+convertProxySKHeavy psk = Cardano.UnsafeACertificate
+  { Cardano.aEpoch = convertHeavyDlgIndex (CSL.pskOmega psk)
+  , Cardano.issuerVK = convertPublicKey (CSL.pskIssuerPk psk)
+  , Cardano.delegateVK = convertPublicKey (CSL.pskDelegatePk psk)
+  , Cardano.Chain.Delegation.signature = convertCert (CSL.pskCert psk)
+  }
+
+convertHeavyDlgIndex :: CSL.HeavyDlgIndex -> Binary.Annotated Cardano.EpochNumber ()
+convertHeavyDlgIndex = flip Binary.Annotated () . convertEpochIndex . CSL.getHeavyDlgIndex
+
+convertPublicKey :: CSL.PublicKey -> Cardano.VerificationKey
+convertPublicKey (CSL.PublicKey pubkey) = Cardano.VerificationKey pubkey
+
+convertCert :: CSL.ProxyCert CSL.HeavyDlgIndex -> Cardano.Signature Cardano.EpochNumber
+convertCert = Cardano.Signature . CSL.unProxyCert
+
+convertGenesisInitializer :: CSL.GenesisInitializer -> Cardano.GenesisInitializer
+convertGenesisInitializer gi = Cardano.GenesisInitializer
+  { Cardano.giTestBalance = convertTestnetBalanceOptions (CSL.giTestBalance gi)
+  , Cardano.giFakeAvvmBalance = convertFakeAvvmOptions (CSL.giFakeAvvmBalance gi)
+  , Cardano.giAvvmBalanceFactor = convertCoinPortion (CSL.giAvvmBalanceFactor gi)
+  , Cardano.giUseHeavyDlg = CSL.giUseHeavyDlg gi
+  , Cardano.giSeed = CSL.giSeed gi
+  }
+
+convertTestnetBalanceOptions :: CSL.TestnetBalanceOptions -> Cardano.TestnetBalanceOptions
+convertTestnetBalanceOptions tbo = Cardano.TestnetBalanceOptions
+  { Cardano.tboPoors = CSL.tboPoors tbo
+  , Cardano.tboRichmen = CSL.tboRichmen tbo
+  , Cardano.tboTotalBalance = either (error . show) id (Cardano.mkLovelace (CSL.tboTotalBalance tbo))
+  -- CSL uses a Double, presumably in [0,1]
+  -- Cardano uses a LovelacePortion, or Word64, the numerator over the
+  -- maximum lovelace value 1e15.
+  , Cardano.tboRichmenShare = either (error . show) id (Cardano.lovelacePortionFromDouble (CSL.tboRichmenShare tbo))
+  , Cardano.tboUseHDAddresses = CSL.tboUseHDAddresses tbo
+  }
+
+convertFakeAvvmOptions :: CSL.FakeAvvmOptions -> Cardano.FakeAvvmOptions
+convertFakeAvvmOptions fao = Cardano.FakeAvvmOptions
+  { Cardano.faoCount = CSL.faoCount fao
+  , Cardano.faoOneBalance = either (error . show) id (Cardano.mkLovelace (CSL.faoOneBalance fao))
+  }
+
+-- CSL.ScriptVersion ~ Word16
+-- Cardano.ScriptVersion isn't defined, but the ProtocolConstants take
+-- a Word16 for it.
+convertScriptVersion :: CSL.ScriptVersion -> Word16
+convertScriptVersion = id
+
+-- Input is assumed to be in milliseconds
+convertSlotDuration :: Integer -> NominalDiffTime
+convertSlotDuration ms = fromIntegral (ms `div` 1000)
+
+convertCoin :: CSL.Coin -> Cardano.Lovelace
+convertCoin = either (error . show) id . Cardano.mkLovelace . CSL.getCoin
+
+convertCoinPortion :: CSL.CoinPortion -> Cardano.LovelacePortion
+convertCoinPortion = Cardano.LovelacePortion . CSL.getCoinPortion
+
+-- Serokell.Data.Memory.Units.Byte -> Natural
+-- I don't want to import serokell-util so we leave it open for any Enum.
+convertByte :: Enum a => a -> Natural
+convertByte = toEnum . fromEnum
+
+-- CSL.FlatSlotId ~ Word64
+convertFlatSlotId :: CSL.FlatSlotId -> Cardano.SlotNumber
+convertFlatSlotId = Cardano.SlotNumber
+
+convertSoftforkRule :: CSL.SoftforkRule -> Cardano.SoftforkRule
+convertSoftforkRule sr = Cardano.SoftforkRule
+  { Cardano.srInitThd = convertCoinPortion (CSL.srInitThd sr)
+  , Cardano.srMinThd = convertCoinPortion (CSL.srMinThd sr)
+  , Cardano.srThdDecrement = convertCoinPortion (CSL.srThdDecrement sr)
+  }
+
+convertTxFeePolicy :: CSL.TxFeePolicy -> Cardano.TxFeePolicy
+convertTxFeePolicy txfp = case txfp of
+  CSL.TxFeePolicyUnknown _ _ -> error "unknown tx fee policy not supported"
+  CSL.TxFeePolicyTxSizeLinear txsl -> Cardano.TxFeePolicyTxSizeLinear
+    (convertTxSizeLinear txsl)
+
+convertTxSizeLinear :: CSL.TxSizeLinear -> Cardano.TxSizeLinear
+convertTxSizeLinear (CSL.TxSizeLinear coeffA coeffB) = Cardano.TxSizeLinear
+  (convertCoeff coeffA)
+  (convertCoeff coeffB)
+
+-- | In CSL.TxSizeLinear, Coeff ~ Nano is used for the coefficients in the
+-- linear equation. In Cardano.TxSizeLinear, a Lovelace is used instead...
+-- So, resolve the Nano to an Integer, then cast to a Word64 to make a
+-- Lovelace.
+convertCoeff :: CSL.Coeff -> Cardano.Lovelace
+convertCoeff (CSL.Coeff nano) = either (error . show) id $ Cardano.mkLovelace $
+  fromIntegral (Fixed.resolution nano)
+
+convertEpochIndex :: CSL.EpochIndex -> Cardano.EpochNumber
+convertEpochIndex = Cardano.EpochNumber . CSL.getEpochIndex
+
+convertProtocolParameters :: CSL.BlockVersionData -> Cardano.ProtocolParameters
+convertProtocolParameters bvd = Cardano.ProtocolParameters
+  { Cardano.ppScriptVersion = convertScriptVersion (CSL.bvdScriptVersion bvd)
+  , Cardano.ppSlotDuration = convertSlotDuration (fromIntegral (CSL.bvdSlotDuration bvd))
+  , Cardano.ppMaxBlockSize = convertByte (CSL.bvdMaxBlockSize bvd)
+  , Cardano.ppMaxHeaderSize = convertByte (CSL.bvdMaxHeaderSize bvd)
+  , Cardano.ppMaxTxSize = convertByte (CSL.bvdMaxTxSize bvd)
+  , Cardano.ppMaxProposalSize = convertByte (CSL.bvdMaxProposalSize bvd)
+  , Cardano.ppMpcThd = convertCoinPortion (CSL.bvdMpcThd bvd)
+  , Cardano.ppHeavyDelThd = convertCoinPortion (CSL.bvdHeavyDelThd bvd)
+  , Cardano.ppUpdateVoteThd = convertCoinPortion (CSL.bvdUpdateVoteThd bvd)
+  , Cardano.ppUpdateProposalThd = convertCoinPortion (CSL.bvdUpdateProposalThd bvd)
+  , Cardano.ppUpdateProposalTTL = convertFlatSlotId (CSL.bvdUpdateImplicit bvd)
+  , Cardano.ppSoftforkRule = convertSoftforkRule (CSL.bvdSoftforkRule bvd)
+  , Cardano.ppTxFeePolicy = convertTxFeePolicy (CSL.bvdTxFeePolicy bvd)
+  , Cardano.ppUnlockStakeEpoch = convertEpochIndex (CSL.bvdUnlockStakeEpoch bvd)
+  }
+
+
+convertGenesisSpec :: CSL.GenesisSpec -> Cardano.GenesisSpec
+convertGenesisSpec gspec = Cardano.UnsafeGenesisSpec
+  { Cardano.gsAvvmDistr = convertAvvmDistr (CSL.gsAvvmDistr gspec)
+  , Cardano.gsHeavyDelegation = convertHeavyDelegation (CSL.gsHeavyDelegation gspec)
+  , Cardano.gsProtocolParameters = convertProtocolParameters (CSL.gsBlockVersionData gspec)
+  , Cardano.gsK = Cardano.BlockCount (fromIntegral (CSL.gpcK (CSL.gsProtocolConstants gspec)))
+  , Cardano.gsProtocolMagic = convertProtocolMagic (CSL.gpcProtocolMagic (CSL.gsProtocolConstants gspec))
+  , Cardano.gsInitializer = convertGenesisInitializer (CSL.gsInitializer gspec)
+  }
+
+-- | cardano-sl uses Timestamp ~ Microseconds for its system start time,
+-- interpreted as _microsecond_ unix/posix time. cardano-ledger uses UTCTime
+-- for the same purpose, so we drop it to seconds then convert.
+convertSystemStart :: CSL.Timestamp -> UTCTime
+convertSystemStart (CSL.Timestamp us) = posixSecondsToUTCTime secs
+  where
+  secs :: NominalDiffTime
+  secs = fromIntegral $ (fromIntegral us :: Integer) `div` 1000000
 
 main :: IO ()
 main = do
@@ -334,21 +560,81 @@ main = do
     let cslTrace = mkCSLTrace (Logging.convertTrace' trace)
         infoTrace = contramap ((,) Wlog.Info) (Trace.named cslTrace)
         confOpts = bpoCardanoConfigurationOptions bpo
-    CSL.withConfigurations infoTrace Nothing Nothing False confOpts $ \genesisConfig _ _ _ -> do
-      let epochSlots = Cardano.EpochSlots (fromIntegral (CSL.configEpochSlots genesisConfig))
-          -- Next, set up the database, taking care to seed with the genesis
-          -- block if it's empty.
-          dbc :: DBConfig
-          dbc = DBConfig
-            { dbFilePath    = bpoDatabasePath bpo
-            , indexFilePath = bpoIndexPath bpo
-            , slotsPerEpoch = epochSlots
-            }
-          -- Trace DB writes in such a way that they appear in EKG.
-          dbTracer = flip contramap (Logging.convertTrace trace) $ \(DB.DBWrite (SlotNo count)) ->
-            ("db", Monitoring.Info, Monitoring.LogValue "block count" (Monitoring.PureI (fromIntegral count)))
-      withDB dbc dbTracer $ \db -> do
-        let server = Shelley.Server.runServer (bpoServerOptions bpo) epochSlots db
-            client = runClient (Logging.convertTrace' trace) (bpoClientOptions bpo) genesisConfig epochSlots db
-        _ <- concurrently server client
-        pure ()
+    -- Legacy cardano-sl genesis configuration is used. Then, it's converted
+    -- to the new cardano-ledger style.
+    yamlConfig <- CSL.parseYamlConfig (CSL.cfoFilePath confOpts) (CSL.cfoKey confOpts)
+    let configDir = takeDirectory $ CSL.cfoFilePath confOpts
+    -- Old part
+    oldGenesisConfig <- CSL.mkConfigFromStaticConfig
+      configDir
+      (CSL.cfoSystemStart confOpts)
+      (CSL.cfoSeed confOpts)
+      (CSL.ccReqNetMagic yamlConfig)
+      (CSL.ccTxValRules yamlConfig)
+      (CSL.ccGenesis yamlConfig)
+    -- New part.
+    -- It uses a MonadError constraint, so use runExceptT and throw an
+    -- exception if it fails (the configuration error is not an Exception
+    -- though, so userError is used).
+    outcome <- runExceptT $ Cardano.mkConfigFromStaticConfig
+      (convertRequiresNetworkMagic (CSL.ccReqNetMagic yamlConfig))
+      (fmap convertSystemStart (CSL.cfoSystemStart confOpts))
+      (CSL.cfoSeed confOpts)
+      (convertStaticConfig (CSL.ccGenesis yamlConfig))
+    newGenesisConfig <- case outcome of
+      Left confError -> throwIO (userError (show confError))
+      Right it       -> pure it
+
+    let epochSlots = Cardano.EpochSlots (fromIntegral (CSL.configEpochSlots oldGenesisConfig))
+        protocolMagic = Cardano.ProtocolMagicId
+          . fromIntegral -- Int32 -> Word32
+          . CSL.unProtocolMagicId
+          . CSL.getProtocolMagicId
+          . CSL.configProtocolMagic
+          $ oldGenesisConfig
+        -- Next, set up the database, taking care to seed with the genesis
+        -- block if it's empty.
+        dbc :: DBConfig
+        dbc = DBConfig
+          { dbFilePath    = bpoDatabasePath bpo
+          , indexFilePath = bpoIndexPath bpo
+          }
+    -- Fulfill ByronGiven, and the necessary cardano-sl reflection configurations.
+    CSL.withUpdateConfiguration (CSL.ccUpdate yamlConfig) $
+      CSL.withSscConfiguration (CSL.ccSsc yamlConfig) $
+      CSL.withBlockConfiguration (CSL.ccBlock yamlConfig) $
+      CSL.withDlgConfiguration (CSL.ccDlg yamlConfig) $
+      CSL.withNodeConfiguration (CSL.ccNode yamlConfig) $
+      Reflection.give protocolMagic $ Reflection.give epochSlots $ do
+        -- Trace DB writes in such a way that they appear in EKG.
+        -- FIXME surprisingly, contra-tracer doesn't give a way to do this.
+        -- It should export
+        --
+        --   Applicative m => (a -> Maybe b) -> Tracer m a -> Tracer m b
+        --
+        -- or similar
+        --
+        --
+        -- This is defined here because we need the reflection instances
+        -- for ByronGiven.
+        let Tracer doConvertedTrace = Logging.convertTrace trace
+            dbTracer :: Tracer IO (TraceEvent (Block ByronConfig))
+            dbTracer = Tracer $ \trEvent -> case trEvent of
+              TraceAddBlockEvent (AddedBlockToVolDB point) -> case point of
+                Point Origin -> pure ()
+                Point (At (Point.Block (SlotNo slotno) _)) ->
+                  -- NB this is here because devops wanted an EKG metric on
+                  -- block count. FIXME should be done in a more sane way...
+                  let val = ("db", Monitoring.Info, Monitoring.LogValue "block count" (Monitoring.PureI (fromIntegral slotno)))
+                  in  doConvertedTrace val
+              TraceAddBlockEvent (AddBlockValidation it@(InvalidBlock _ _)) ->
+                  let val = ("db", Monitoring.Error, Monitoring.LogMessage (fromString (show it)))
+                  in  doConvertedTrace val
+              _ -> pure ()
+        traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Opening database")
+        withDB newGenesisConfig dbc dbTracer $ \idx cdb -> do
+          traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
+          let server = Shelley.Server.runServer (bpoServerOptions bpo) protocolMagic epochSlots cdb
+              client = runClient (Logging.convertTrace' trace) (bpoClientOptions bpo) oldGenesisConfig protocolMagic epochSlots idx cdb
+          _ <- concurrently server client
+          pure ()

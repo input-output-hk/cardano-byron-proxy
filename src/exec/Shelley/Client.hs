@@ -1,3 +1,6 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
+
 module Shelley.Client
   ( Options (..)
   , runClient
@@ -5,23 +8,23 @@ module Shelley.Client
 
 import Codec.SerialiseTerm (encodeTerm, decodeTerm)
 import qualified Network.Socket as Network
-import Control.Monad.Trans.Class (lift)
-import Control.Monad.Trans.Resource (ResourceT)
+import Control.Monad.Class.MonadSTM (atomically)
 import Control.Tracer (Tracer, traceWith)
 import Data.Functor.Contravariant (contramap)
-import qualified Data.Text as Text (pack)
 import qualified Data.Text.Lazy.Builder as Text
 
 import qualified Cardano.Chain.Block as Cardano
 import qualified Cardano.Chain.Slotting as Cardano
-import qualified Cardano.Binary as Binary
+import Cardano.Crypto (ProtocolMagicId)
 
-import Ouroboros.Byron.Proxy.DB (DB)
-import qualified Ouroboros.Byron.Proxy.DB as DB
+import Ouroboros.Byron.Proxy.Block (Block, unByronHeaderOrEBB)
 import qualified Ouroboros.Byron.Proxy.ChainSync.Client as Client
-import qualified Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync
+import Ouroboros.Byron.Proxy.ChainSync.Types (Point)
 import Ouroboros.Byron.Proxy.Network.Protocol (initiatorVersions)
+import Ouroboros.Consensus.Block (Header)
 import Ouroboros.Network.Socket (connectToNode)
+import qualified Ouroboros.Network.Block as Block (Point (..))
+import Ouroboros.Storage.ChainDB.API (ChainDB, getTipPoint)
 
 import Orphans ()
 
@@ -36,19 +39,23 @@ data Options = Options
 -- and prints. It stops after any rollback, because the DB is at the moment
 -- immutable (no rollbacks).
 runClient
-  :: Options
+  :: forall cfg .
+     Options
   -> Tracer IO Text.Builder
+  -> ProtocolMagicId
   -> Cardano.EpochSlots
-  -> DB IO
+  -> ChainDB IO (Block cfg)
   -> IO ()
-runClient options tracer epochSlots db = do
+runClient options tracer pm epochSlots db = do
   addrInfosLocal  <- Network.getAddrInfo (Just addrInfoHints) (Just "127.0.0.1") (Just "0")
   addrInfosRemote <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
   case (addrInfosLocal, addrInfosRemote) of
     (addrInfoLocal : _, addrInfoRemote : _) -> connectToNode
       encodeTerm
       decodeTerm
-      (initiatorVersions epochSlots chainSyncClient)
+      -- TODO: this should be some proper type rather than a tuple
+      (,)
+      (initiatorVersions pm epochSlots chainSyncClient)
       (Just addrInfoLocal)
       addrInfoRemote
     _ -> error "no getAddrInfo"
@@ -63,55 +70,26 @@ runClient options tracer epochSlots db = do
   -- source for blocks: one read pointer improve is always enough.
   chainSyncClient = Client.chainSyncClient fold
     where
-    fold :: Client.Fold (ResourceT IO) ()
+    fold :: Client.Fold cfg IO ()
     fold = Client.Fold $ do
-      tip <- lift $ DB.readTip db
-      mPoint <- case tip of
-        -- DB is empty. Can go without improving read pointer.
-        DB.TipGenesis -> pure Nothing
-        -- EBB is nice because we already have the header hash.
-        DB.TipEBB   slotNo hhash _     -> pure $ Just $ ChainSync.Point
-          { ChainSync.pointSlot = slotNo
-          , ChainSync.pointHash = hhash
-          }
-        DB.TipBlock slotNo       bytes -> pure $ Just $ ChainSync.Point
-          { ChainSync.pointSlot = slotNo
-          , ChainSync.pointHash = hhash
-          }
-          where
-          hhash = case Binary.decodeFullAnnotatedBytes (Text.pack "Block or boundary") (Cardano.fromCBORABlockOrBoundary epochSlots) bytes of
-            Left _cborError -> error "failed to decode block"
-            Right block -> case block of
-              Cardano.ABOBBoundary _ -> error "Corrupt DB: expected block but got EBB"
-              Cardano.ABOBBlock blk  -> Cardano.blockHashAnnotated blk
-      case mPoint of
-        Nothing -> Client.runFold roll
-        -- We don't need to do anything with the result; the point is that
-        -- the server now knows the proper read pointer.
-        Just point -> pure $ Client.Improve [point] $ \_ _ -> roll
-    roll :: Client.Fold (ResourceT IO) ()
+      Block.Point tip <- atomically $ getTipPoint db
+      pure $ Client.Improve [tip] $ \_ _ -> roll
+    roll :: Client.Fold cfg IO ()
     roll = Client.Fold $ pure $ Client.Continue forward backward
-    forward :: ChainSync.Block -> ChainSync.Point -> Client.Fold (ResourceT IO) ()
-    forward blk point = Client.Fold $ do
-      lift $ traceWith (contramap chainSyncShow tracer) (Right blk, point)
-      -- FIXME
-      -- Write one block at a time. CPS doesn't mix well with the typed
-      -- protocol style.
-      -- This will give terrible performance for the SQLite index as it is
-      -- currently defined. As a workaround, the SQLite index is set to use
-      -- non-synchronous writes (per connection).
-      -- Possible solution: do the batching automatically, within the index
-      -- itself?
-      lift $ DB.appendBlocks db $ \dbAppend ->
-        DB.appendBlock dbAppend (DB.CardanoBlockToWrite blk)
+    forward :: Header (Block cfg) -> Point -> Client.Fold cfg IO ()
+    forward hdr point = Client.Fold $ do
+      traceWith (contramap chainSyncShow tracer) (Right hdr, point)
+      -- TODO do this using block fetch.
+      -- What to do with the header though?
+      -- addBlock db blk
       Client.runFold roll
-    backward :: ChainSync.Point -> ChainSync.Point -> Client.Fold (ResourceT IO) ()
+    backward :: Point -> Point -> Client.Fold cfg IO ()
     backward point1 point2 = Client.Fold $ do
-      lift $ traceWith (contramap chainSyncShow tracer) (Left point1, point2)
-      pure $ Client.Stop ()
+      traceWith (contramap chainSyncShow tracer) (Left point1, point2)
+      Client.runFold roll
 
   chainSyncShow
-    :: (Either ChainSync.Point ChainSync.Block, ChainSync.Point)
+    :: (Either Point (Header (Block cfg)), Point)
     -> Text.Builder
   chainSyncShow = \(roll, _tip) -> case roll of
     Left  back    -> mconcat
@@ -120,9 +98,9 @@ runClient options tracer epochSlots db = do
       ]
     Right forward -> mconcat
       [ Text.fromString "Roll forward to\n"
-      , case Binary.unAnnotated forward of
-          Cardano.ABOBBoundary ebb -> Text.fromString (show ebb)
-          Cardano.ABOBBlock    blk -> Cardano.renderHeader
+      , case unByronHeaderOrEBB forward of
+          Left  ebb -> Text.fromString (show ebb)
+          Right hdr -> Cardano.renderHeader
             epochSlots
-            (Cardano.blockHeader (fmap (const ()) blk))
+            (fmap (const ()) hdr)
       ]

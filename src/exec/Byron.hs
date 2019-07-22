@@ -1,49 +1,65 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Byron
   ( download
   , announce
+  -- TODO these should be exported from the byron-proxy library
+  , recodeBlock
+  , recodeBlockOrFail
   ) where
 
-import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM (STM, atomically, retry)
-import Control.Lens ((^.))
-import Control.Monad (forM_, unless)
+import Control.Exception (throwIO)
+import Control.Monad (forM_)
 import Control.Tracer (Tracer, traceWith)
+import qualified Data.ByteString.Lazy as Lazy (fromStrict)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Text.Lazy.Builder as Text
+import Data.Typeable (Typeable)
 import System.Random (StdGen, getStdGen, randomR)
 
 import qualified Cardano.Binary as Binary
 import qualified Cardano.Chain.Block as Cardano
 import qualified Cardano.Chain.Slotting as Cardano
 
-import qualified Pos.Binary.Class as CSL (decodeFull)
+import qualified Pos.Binary.Class as CSL (decodeFull, serialize)
 import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), GenesisBlock,
-                                         HeaderHash, MainBlock, gbHeader,
-                                         headerHash)
+                                         MainBlockHeader, headerHash)
 import qualified Pos.Infra.Diffusion.Types as CSL
 
-import qualified Ouroboros.Byron.Proxy.DB as DB
+import Ouroboros.Byron.Proxy.Block (Block (..), ByronBlockOrEBB (..),
+         coerceHashToLegacy, unByronHeaderOrEBB, headerHash)
 import Ouroboros.Byron.Proxy.Main
+import Ouroboros.Consensus.Block (getHeader)
+import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
+import Ouroboros.Network.Block (blockHash)
+import qualified Ouroboros.Network.AnchoredFragment as AF
+import qualified Ouroboros.Network.ChainFragment as CF
+import Ouroboros.Storage.ChainDB.API (ChainDB)
+import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 -- | Download the best available chain from Byron peers and write to the
 -- database, over and over again.
 --
 -- No exception handling is done.
 download
-  :: Tracer IO Text.Builder
+  :: forall cfg x .
+     ( ByronGiven, Typeable cfg )
+  => Tracer IO Text.Builder
   -> CSL.GenesisBlock -- ^ For use as checkpoint when DB is empty. Also will
                       -- be put into an empty DB.
                       -- Sadly, old Byron net API doesn't give any meaning to an
                       -- empty checkpoint set; it'll just fall over.
   -> Cardano.EpochSlots
-  -> DB.DB IO
+  -> ChainDB IO (Block cfg)
   -> ByronProxy
+  -> (CSL.Block -> Block cfg -> IO ())
   -> IO x
-download tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Nothing
+download tracer genesisBlock epochSlots db bp k = getStdGen >>= mainLoop Nothing
 
   where
 
@@ -53,7 +69,7 @@ download tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Nothing
   waitForNext mBt = do
     mBt' <- bestTip bp
     if mBt == mBt'
-    -- If recvAtom retires then the whole STM will retry and we'll check again
+    -- If recvAtom retries then the whole STM will retry and we'll check again
     -- for the best tip to have changed.
     then fmap Right (recvAtom bp)
     else case mBt' of
@@ -76,49 +92,43 @@ download tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Nothing
           ]
         mainLoop mBt rndGen
       Left bt -> do
-        -- Get the tip from the database.
-        -- It must not be empty; the DB must be seeded with the genesis block.
-        -- FIXME throw exception, don't use error.
-        tip <- DB.readTip db
-        (isEBB, tipSlot, tipHash) <- case tip of
+        mTip <- ChainDB.getTipHeader db
+        tipHash <- case mTip of
           -- If the DB is empty, we use the genesis hash as our tip, but also
           -- we need to put the genesis block into the database, because the
           -- Byron peer _will not serve it to us_!
-          DB.TipGenesis -> do
-            DB.appendBlocks db $ \dbwrite ->
-              DB.appendBlock dbwrite (DB.LegacyBlockToWrite (Left genesisBlock))
-            pure (True, 0, CSL.headerHash genesisBlock)
-          DB.TipEBB   slot hash _ -> pure (True, slot, DB.coerceHashToLegacy hash)
-          DB.TipBlock slot bytes -> case Binary.decodeFullAnnotatedBytes "Block or boundary" (Cardano.fromCBORABlockOrBoundary epochSlots) bytes of
-            Left decoderError -> error $ "failed to decode block: " ++ show decoderError
-            Right (Cardano.ABOBBoundary _) -> error $ "Corrput DB: got EBB where block expected"
-            -- We have a cardano-ledger `HeaderHash` but we need a cardano-sl
-            -- `HeaderHash`.
-            -- FIXME should not come from DB module
-            Right (Cardano.ABOBBlock blk) ->
-              pure (False, slot, DB.coerceHashToLegacy (Cardano.blockHashAnnotated blk))
+          Nothing -> do
+            traceWith tracer "Seeding database with genesis"
+            genesisBlock' :: Block cfg <- recodeBlockOrFail epochSlots throwIO (Left genesisBlock)
+            let hh = headerHash (getHeader genesisBlock')
+                hh' = blockHash genesisBlock'
+            () <- case headerHash (getHeader genesisBlock') == blockHash genesisBlock' of
+              True  -> do
+                traceWith tracer $ mconcat
+                  [ "Hashes match "
+                  , Text.fromString (show hh)
+                  , " "
+                  , Text.fromString (show hh')
+                  ]
+              False -> error $ "mismatch " ++ show hh ++ " " ++ show hh'
+            ChainDB.addBlock db genesisBlock'
+            pure $ CSL.headerHash genesisBlock
+          Just header -> pure $ coerceHashToLegacy (headerHash header)
         -- Pick a peer from the list of announcers at random and download
         -- the chain.
         let (peer, rndGen') = pickRandom rndGen (btPeers bt)
         traceWith tracer $ mconcat
-          [ "Using tip with hash "
-          , Text.fromString (show tipHash)
-          , " at slot "
-          , Text.fromString (show tipSlot)
-          , if isEBB then " (EBB)" else ""
-          ]
-        traceWith tracer $ mconcat
-          [ "Downloading the chain with tip hash "
+          [ "Attempting to downloading chain with hash "
           , Text.fromString (show tipHash)
           , " from "
           , Text.fromString (show peer)
           ]
         _ <- downloadChain
-              bp
-              peer
-              (CSL.headerHash (btTip bt))
-              [tipHash]
-              streamer
+               bp
+               peer
+               (CSL.headerHash (btTip bt))
+               [tipHash]
+               streamer
         mainLoop (Just bt) rndGen'
 
   -- If it ends at an EBB, the EBB will _not_ be written. The tip will be the
@@ -126,10 +136,16 @@ download tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Nothing
   -- This should be OK.
   streamer :: CSL.StreamBlocks CSL.Block IO ()
   streamer = CSL.StreamBlocks
-    { CSL.streamBlocksMore = \blocks -> DB.appendBlocks db $ \dbwrite -> do
+    { CSL.streamBlocksMore = \blocks -> do
         -- List comes in newest-to-oldest order.
         let orderedBlocks = NE.toList (NE.reverse blocks)
-        forM_ orderedBlocks (DB.appendBlock dbwrite . DB.LegacyBlockToWrite)
+        -- The blocks are legacy CSL blocks. To put them into the DB, we must
+        -- convert them to new cardano-ledger blocks. That's done by
+        -- encoding and decoding.
+        forM_ orderedBlocks $ \blk -> do
+          blk' <- recodeBlockOrFail epochSlots throwIO blk
+          k blk blk'
+          ChainDB.addBlock db blk'
         pure streamer
     , CSL.streamBlocksDone = pure ()
     }
@@ -139,34 +155,51 @@ download tracer genesisBlock epochSlots db bp = getStdGen >>= mainLoop Nothing
     let (idx, rndGen') = randomR (0, NE.length ne - 1) rndGen
     in  (ne NE.!! idx, rndGen')
 
--- | Repeatedly check the database for the latest block, and announce it
--- whenever it changes.
--- NB: only proper main blocks can be announced, not EBBs.
--- The poll interval is hard-coded to 10 seconds.
--- FIXME polling won't be needed, once we have a DB layer that can notify on
--- tip change.
--- No exception handling is done.
+recodeBlockOrFail
+  :: Cardano.EpochSlots
+  -> (forall x . Binary.DecoderError -> IO x)
+  -> CSL.Block
+  -> IO (Block cfg)
+recodeBlockOrFail epochSlots onErr = either onErr pure . recodeBlock epochSlots
+
+recodeBlock
+  :: Cardano.EpochSlots
+  -> CSL.Block
+  -> Either Binary.DecoderError (Block cfg)
+recodeBlock epochSlots cslBlk = case Binary.decodeFullAnnotatedBytes "Block" decoder cslBytes of
+  Right blk -> Right $ ByronBlockOrEBB blk
+  Left  err -> Left  $ err
+  where
+  cslBytes = CSL.serialize cslBlk
+  decoder = Cardano.fromCBORABlockOrBoundary epochSlots
+
+-- | Uses the `ChainDB` to announce the new tip-of-chain as promptly as
+-- possible, whenever it should change.
 announce
-  :: Tracer IO Text.Builder
-  -> Maybe CSL.HeaderHash -- ^ Of block most recently announced.
-  -> DB.DB IO
+  :: ( ByronGiven, Typeable cfg ) -- Needed for HasHeader instance.
+  => Maybe Cardano.HeaderHash -- ^ Of block most recently announced.
+  -> ChainDB IO (Block cfg)
   -> ByronProxy
   -> IO x
-announce tracer mHashOfLatest db bp = do
-  tip <- DB.readTip db
-  mHashOfLatest' <- case tip of
-    -- Genesis means empty database. Announce nothing.
-    DB.TipGenesis         -> pure mHashOfLatest
-    -- EBBs are not announced.
-    DB.TipEBB   _ _ _     -> pure mHashOfLatest
-    -- Main blocks must be decoded to CSL blocks.
-    DB.TipBlock _   bytes -> case CSL.decodeFull bytes of
-      Left _txt                               -> error "announce: could not decode block"
-      Right (Left (_ebb :: CSL.GenesisBlock)) -> error "announce: ebb where block expected"
-      Right (Right (blk :: CSL.MainBlock))   -> do
-        let header = blk ^. CSL.gbHeader
-            hash   = Just (CSL.headerHash header)
-        unless (hash == mHashOfLatest) (announceChain bp header)
-        pure hash
-  threadDelay 10000000
-  announce tracer mHashOfLatest' db bp
+announce mHashOfLatest db bp = do
+  (hash, tipHeader) <- atomically $ do
+    fragment <- fmap AF.unanchorFragment (ChainDB.getCurrentChain db)
+    case CF.head fragment of
+      Nothing     -> retry
+      Just header ->
+        if Just hash == mHashOfLatest
+        then retry
+        else pure (hash, header)
+        where
+        hash = headerHash header
+  -- Must decode the legacy header from the cardano-ledger header.
+  -- TODO alternatively, the type of `ByronProxy.announceChain` could change
+  -- to accept a `Header Block`, and it could deal with the recoding. Probably
+  -- better that way
+  case unByronHeaderOrEBB tipHeader of
+    Right hdr -> case CSL.decodeFull (Lazy.fromStrict (Cardano.headerAnnotation hdr)) of
+      Left txt -> error "announce: could not decode main header"
+      Right (hdr' :: CSL.MainBlockHeader) -> announceChain bp hdr'
+    -- We do not announce EBBs.
+    Left ebb  -> pure ()
+  announce (Just hash) db bp

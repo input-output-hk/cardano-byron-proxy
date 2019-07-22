@@ -3,8 +3,13 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
 
-module Ouroboros.Byron.Proxy.Index.Sqlite where
+module Ouroboros.Byron.Proxy.Index.Sqlite
+  ( withIndex
+  , withIndexAuto
+  , index
+  ) where
 
 import Control.Exception (Exception, throwIO)
 import Crypto.Hash (digestFromByteString)
@@ -15,22 +20,29 @@ import Database.SQLite.Simple (Connection, Query)
 import qualified Database.SQLite.Simple as Sql
 import System.Directory (doesFileExist)
 
-import Pos.Chain.Block (HeaderHash)
-import Pos.Crypto.Hashing (AbstractHash (..))
+import qualified Cardano.Binary as Binary (unAnnotated)
+import Cardano.Chain.Block (HeaderHash)
+import qualified Cardano.Chain.Block as Cardano
+import Cardano.Chain.Slotting (EpochSlots (..), unSlotNumber)
+import Cardano.Crypto.Hashing (AbstractHash (..))
 
-import Ouroboros.Storage.Common (EpochNo(..))
+import Ouroboros.Network.Block (SlotNo (..))
+import Ouroboros.Network.Point (WithOrigin (..), blockPointHash, blockPointSlot)
+import qualified Ouroboros.Network.Point as Point (Block (..))
 
-import Ouroboros.Byron.Proxy.Index.Types
+import Ouroboros.Byron.Proxy.Block (Block, Header, headerHash, unByronHeaderOrEBB)
+import Ouroboros.Byron.Proxy.Index.Types (Index (..))
+import qualified Ouroboros.Byron.Proxy.Index.Types as Index
 
 -- | Make an index from an SQLite connection (sqlite-simple).
 -- Every `indexWrite` continuation runs in an SQLite transaction
 -- (BEGIN TRANSACTION).
-sqliteIndex :: Connection -> Index IO
-sqliteIndex conn = Index
-  { indexRead = \ip -> case ip of
-      Tip -> getTip conn
-      ByHash hh -> getHash conn hh
-  , indexWrite = \k -> Sql.withTransaction conn (k (IndexWrite (setTip conn)))
+index :: EpochSlots -> Connection -> Index IO (Header (Block cfg))
+index epochSlots conn = Index
+  { Index.lookup = sqliteLookup epochSlots conn
+  , tip          = sqliteTip epochSlots conn
+  , rollforward  = sqliteRollforward epochSlots conn
+  , rollbackward = sqliteRollbackward epochSlots conn
   }
 
 -- | Open a new or existing SQLite database. If new, it will set up the schema.
@@ -43,23 +55,27 @@ data OpenDB where
 -- `ImmutableDB`: iterate from the start and insert an entry for each thing.
 -- Would write that in Ouroboros.Byron.Proxy.DB though, I think.
 
--- | Use an SQLite database connection.
-withDB :: OpenDB -> FilePath -> (Index IO -> IO t) -> IO t
-withDB o fp k = Sql.withConnection fp $ \conn -> do
+-- | Create and use an sqlite connection to back an index in a bracket style.
+-- Sets the sqlite main.synchronous pragma to 0 for faster writes.
+withIndex :: EpochSlots -> OpenDB -> FilePath -> (Index IO (Header (Block cfg)) -> IO t) -> IO t
+withIndex epochSlots o fp k = Sql.withConnection fp $ \conn -> do
   case o of
     New      -> Sql.withTransaction conn $ do
       createTable conn
       createIndex conn
     Existing -> pure ()
+  -- This greatly improves performance.
+  -- FIXME study what the drawbacks are. Should be fine, since if writes
+  -- are lost, the index can still be recovered.
   Sql.execute_ conn "PRAGMA main.synchronous = 0;"
-  k (sqliteIndex conn)
+  k (index epochSlots conn)
 
 -- | Like withDB but uses file existence check to determine whether it's new
--- or existing.
-withDB_ :: FilePath -> (Index IO -> IO t) -> IO t
-withDB_ fp k = doesFileExist fp >>= \b -> case b of
-  True  -> withDB Existing fp k
-  False -> withDB New      fp k
+-- or existing. If it exists, it's assumed to be an sqlite database file.
+withIndexAuto :: EpochSlots -> FilePath -> (Index IO (Header (Block cfg)) -> IO t) -> IO t
+withIndexAuto epochSlots fp k = doesFileExist fp >>= \b -> case b of
+  True  -> withIndex epochSlots Existing fp k
+  False -> withIndex epochSlots New      fp k
 
 data IndexInternallyInconsistent where
   -- | The `Int` is less than -1
@@ -117,22 +133,22 @@ sql_get_tip =
   "SELECT header_hash, epoch, slot FROM block_index\
   \ ORDER BY epoch DESC, slot DESC LIMIT 1;"
 
-getTip :: Sql.Connection -> IO (Maybe (HeaderHash, EpochNo, IndexSlot))
-getTip conn = do
+sqliteTip :: EpochSlots -> Sql.Connection -> IO (WithOrigin (Point.Block SlotNo HeaderHash))
+sqliteTip epochSlots conn = do
    rows :: [(ByteString, Word64, Int)] <- Sql.query_ conn sql_get_tip
    case rows of
-     [] -> pure Nothing
+     [] -> pure Origin
      ((hhBlob, epoch, slotInt) : _) -> do
        hh <- case digestFromByteString hhBlob of
          Just hh -> pure (AbstractHash hh)
          Nothing -> throwIO $ InvalidHash hhBlob
-       slot <-
+       slot :: Word64 <-
          if slotInt == -1
-         then pure EBBSlot
+         then pure $ unEpochSlots epochSlots * epoch
          else if slotInt >= 0
-         then pure (RealSlot (fromIntegral slotInt))
+         then pure $ fromIntegral slotInt
          else throwIO $ InvalidRelativeSlot hh slotInt
-       pure $ Just (hh, EpochNo epoch, slot)
+       pure $ At $ Point.Block (SlotNo slot) hh
 
 sql_get_hash :: Query
 sql_get_hash =
@@ -140,20 +156,20 @@ sql_get_hash =
   \ WHERE header_hash = ?;"
 
 -- | Get epoch and slot by hash.
-getHash :: Sql.Connection -> HeaderHash -> IO (Maybe ((), EpochNo, IndexSlot))
-getHash conn hh@(AbstractHash digest) = do
+sqliteLookup :: EpochSlots -> Sql.Connection -> HeaderHash -> IO (Maybe SlotNo)
+sqliteLookup epochSlots conn hh@(AbstractHash digest) = do
   rows :: [(Word64, Int)]
     <- Sql.query conn sql_get_hash (Sql.Only (convert digest :: ByteString))
   case rows of
     [] -> pure Nothing
     ((epoch, slotInt) : _) -> do
-      slot <-
+      slot :: Word64 <-
         if slotInt == -1
-        then pure EBBSlot
+        then pure $ unEpochSlots epochSlots * epoch
         else if slotInt >= 0
-        then pure (RealSlot (fromIntegral slotInt))
+        then pure $ fromIntegral slotInt
         else throwIO $ InvalidRelativeSlot hh slotInt
-      pure $ Just ((), EpochNo epoch, slot)
+      pure $ Just $ SlotNo slot
 
 -- The ON CONFLICT DO NOTHING is essential. The DB into which this index points
 -- may fall behind the index, for instance because of an unclean shutdown in
@@ -164,13 +180,75 @@ sql_insert =
   "INSERT INTO block_index VALUES (?, ?, ?)\
   \  ON CONFLICT DO NOTHING;"
 
-setTip :: Sql.Connection -> HeaderHash -> EpochNo -> IndexSlot -> IO ()
-setTip conn (AbstractHash digest) (EpochNo epoch) slot = do
-  Sql.execute conn sql_insert (hashBytes, epoch, slotInt)
+sqliteRollforward
+  :: EpochSlots
+  -> Sql.Connection
+  -> Header (Block cfg)
+  -> IO ()
+sqliteRollforward epochSlots conn hdr =
+  Sql.execute conn sql_insert (hashBytes, epoch, slot)
   where
-  slotInt :: Int
-  slotInt = case slot of
-    EBBSlot       -> -1
-    RealSlot word -> fromIntegral word
+
+  AbstractHash digest = headerHash hdr
+
   hashBytes :: ByteString
   hashBytes = convert digest
+
+  epoch, slot :: Int
+  (epoch, slot) = case unByronHeaderOrEBB hdr of
+    Left  bvd -> (fromIntegral (Cardano.boundaryEpoch bvd), -1)
+    Right hdr ->
+      fromIntegral (unSlotNumber (Binary.unAnnotated (Cardano.aHeaderSlot hdr)))
+      `quotRem`
+      fromIntegral (unEpochSlots epochSlots)
+
+-- | Clear the index, in case of a rollback to origin.
+sql_delete :: Query
+sql_delete = "DELETE FROM block_index;"
+
+-- | Clear the index from a given point, in case of a rollback to a non-origin
+-- point.
+sql_delete_from :: Query
+sql_delete_from =
+  "DELETE FROM block_index WHERE epoch > ? OR (epoch == ? AND slot > ?);"
+
+sql_delete_from_ebb :: Query
+sql_delete_from_ebb =
+  "DELETE FROM block_index WHERE epoch > ? OR (epoch == ? AND slot > ?) OR (epoch == ? AND slot == ? AND hash == ?);"
+
+-- | Roll backward to a point, deleting every entry for a block strictly
+-- greater than the slot at that point. If the point is not in the database,
+-- an exception is thrown (TODO).
+sqliteRollbackward :: EpochSlots -> Sql.Connection -> WithOrigin (Point.Block SlotNo HeaderHash) -> IO ()
+sqliteRollbackward epochSlots conn point = case point of
+  -- Rolling back to origin is simple: delete everything.
+  Origin    -> Sql.execute_ conn sql_delete
+  -- Within a transaction, look up the hash for the point, then use its
+  -- relative slot to decide what to delete. This ensures that when rolling
+  -- back to a relative slot 0 block, we don't mistakenly delete the EBB.
+  At bpoint -> Sql.withTransaction conn $ do
+    let hh@(AbstractHash digest) = blockPointHash bpoint
+        expectedEpoch, expectedSlot :: Int
+        (expectedEpoch, expectedSlot) =
+          fromIntegral (unSlotNo (blockPointSlot bpoint))
+          `quotRem`
+          fromIntegral (unEpochSlots epochSlots)
+    rows :: [(Word64, Int)]
+      <- Sql.query conn sql_get_hash (Sql.Only (convert digest :: ByteString))
+    case rows of
+      -- TODO exception?
+      [] -> pure ()
+      -- Check that the epoch and slot match what's expected, and then
+      -- delete all rows greater than them
+      ((epoch, slotInt) : _) -> do
+        let matchesExpectedEpoch = epoch == fromIntegral expectedEpoch
+        matchesExpectedSlot <-
+          if slotInt == -1
+          then pure (expectedSlot == 0)
+          else if slotInt >= 0
+          then pure (expectedSlot == slotInt)
+          else throwIO $ InvalidRelativeSlot hh slotInt
+        if matchesExpectedSlot && matchesExpectedEpoch
+        then Sql.execute conn sql_delete_from (epoch, epoch, slotInt)
+        -- TODO exception?
+        else pure ()

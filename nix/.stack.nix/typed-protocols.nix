@@ -4,8 +4,8 @@
     package = {
       specVersion = "1.10";
       identifier = { name = "typed-protocols"; version = "0.1.0.0"; };
-      license = "MIT";
-      copyright = "2018-2019 IOHK";
+      license = "Apache-2.0";
+      copyright = "2019 Input Output (Hong Kong) Ltd.";
       maintainer = "alex@well-typed.com, duncan@well-typed.com, marcin.szamotulski@iohk.io";
       author = "Alexander Vieth, Duncan Coutts, Marcin Szamotulski";
       homepage = "";
@@ -21,6 +21,7 @@
           (hsPkgs.io-sim-classes)
           (hsPkgs.bytestring)
           (hsPkgs.contra-tracer)
+          (hsPkgs.time)
           ];
         };
       tests = {
@@ -34,6 +35,7 @@
             (hsPkgs.QuickCheck)
             (hsPkgs.tasty)
             (hsPkgs.tasty-quickcheck)
+            (hsPkgs.time)
             ];
           };
         };
@@ -41,8 +43,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/ouroboros-network";
-      rev = "f132a47c7d8711cc2c0457c62509fa1dbcb9347c";
-      sha256 = "1vp0m4zhv93z7x4vwaj5izp13dzx5s44wa6q0dpkq0l8x73pi47x";
+      rev = "9af72ac5b0571269f421acfbd873fe5bc1e0e3c5";
+      sha256 = "1g5mn3g8rpg80qysxd1qhnqk0grv53l60mskw3f9pisnicd7xxkg";
       });
     postUnpack = "sourceRoot+=/typed-protocols; echo source root reset to \$sourceRoot";
     }

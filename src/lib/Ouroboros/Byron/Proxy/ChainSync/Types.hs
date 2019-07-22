@@ -1,11 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 
+-- TODO rename to Ouroboros.Byron.Proxy.ChainSync.Point?
 module Ouroboros.Byron.Proxy.ChainSync.Types
-  ( Block
-  , Point (..)
+  ( Point
   , codec
-  , encodeBlock
-  , decodeBlock
   , encodePoint
   , decodePoint
   ) where
@@ -14,71 +13,44 @@ import Control.Monad.Class.MonadST (MonadST)
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
-import Codec.Serialise (Serialise (..))
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as Lazy (ByteString, fromStrict)
+import qualified Data.ByteString.Lazy as Lazy (ByteString)
 import Network.TypedProtocol.Codec (Codec)
 
 import qualified Cardano.Binary as Binary
-import qualified Cardano.Chain.Block as Cardano
+import qualified Cardano.Chain.Block as Cardano (HeaderHash)
 import Cardano.Chain.Slotting (EpochSlots)
+import Cardano.Crypto (ProtocolMagicId)
 
+import Ouroboros.Byron.Proxy.Block (Block, decodeHeader, encodeHeader)
+import Ouroboros.Consensus.Block (Header)
 import Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSync)
 import Ouroboros.Network.Protocol.ChainSync.Type (ChainSync)
-import Ouroboros.Network.Block (SlotNo (..))
+import Ouroboros.Network.Block (SlotNo)
+import qualified Ouroboros.Network.Block as Block (Point (..), decodePoint, encodePoint)
+import Ouroboros.Network.Point (WithOrigin)
+import qualified Ouroboros.Network.Point as Point (Block)
 
-type Block = Binary.Annotated (Cardano.ABlockOrBoundary ByteString) ByteString
-
-data Point = Point
-  { pointSlot :: !SlotNo
-  , pointHash :: !Cardano.HeaderHash
-  }
-  deriving (Show, Eq)
-
--- | A `Block` has a `ByteString` annotation which is assumed to be its
--- CBOR encoding, so we drop that into a "CBOR-in-CBOR" (tag 24).
-encodeBlock :: Block -> CBOR.Encoding
-encodeBlock = Binary.encodeUnknownCborDataItem . Lazy.fromStrict . Binary.annotation
-
--- | FIXME length limit must be imposed. Can it be done here? I don't see any
--- types in cborg that would make it possible.
-decodeBlock :: EpochSlots -> CBOR.Decoder s Block
-decodeBlock epochSlots = do
-  bytes <- Binary.decodeUnknownCborDataItem
-  case Binary.decodeFullAnnotatedBytes "Block or boundary" internalDecoder (Lazy.fromStrict bytes) of
-    Right it  -> pure $ Binary.Annotated it bytes
-    -- FIXME
-    --   err :: Binary.DecoderError
-    -- but AFAICT the only way to make the decoder fail is to give a `String`
-    -- to `fail`...
-    Left  err -> fail (show err)
-  where
-  internalDecoder :: Binary.Decoder s (Cardano.ABlockOrBoundary Binary.ByteSpan)
-  internalDecoder = Cardano.fromCBORABlockOrBoundary epochSlots
+type Point = WithOrigin (Point.Block SlotNo Cardano.HeaderHash)
 
 encodePoint :: Point -> CBOR.Encoding
-encodePoint point =
-     CBOR.encodeListLen 2
-  -- FIXME `SlotNo` encoding uses the `Serialise` class, but `ToCBOR` class
-  -- is used for `HeaderHash`.
-  <> encode (pointSlot point)
-  <> Binary.toCBOR (pointHash point)
+encodePoint = Block.encodePoint Binary.toCBOR . mkPoint
+  where
+  mkPoint :: Point -> Block.Point (Block cfg)
+  mkPoint = Block.Point
 
 decodePoint :: CBOR.Decoder s Point
-decodePoint = do
-  n <- CBOR.decodeListLen
-  case n of
-    -- FIXME `SlotNo` decoding uses the `Serialise` class, but `ToCBOR` class
-    -- is used for `HeaderHash`.
-    2 -> Point <$> decode <*> Binary.fromCBOR
-    _ -> fail "Point: invalid list length"
+decodePoint = unMkPoint <$> Block.decodePoint Binary.fromCBOR
+  where
+  unMkPoint :: Block.Point (Block cfg) -> Point
+  unMkPoint = Block.getPoint
 
 codec
   :: (MonadST m)
-  => EpochSlots
-  -> Codec (ChainSync Block Point) CBOR.DeserialiseFailure m Lazy.ByteString
-codec epochSlots = codecChainSync
-  encodeBlock
-  (decodeBlock epochSlots)
+  => ProtocolMagicId
+  -> EpochSlots
+  -> Codec (ChainSync (Header (Block cfg)) Point) CBOR.DeserialiseFailure m Lazy.ByteString
+codec pm epochSlots = codecChainSync
+  encodeHeader
+  (decodeHeader epochSlots)
   encodePoint
   decodePoint

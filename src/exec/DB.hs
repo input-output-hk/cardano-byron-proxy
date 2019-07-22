@@ -1,77 +1,131 @@
+{-# LANGUAGE GADTSyntax #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
+
 module DB
   ( DBConfig (..)
   , withDB
   ) where
 
-import qualified Codec.CBOR.Encoding as CBOR
-import qualified Codec.CBOR.Decoding as CBOR
-
-import Control.Exception (throwIO)
+import Control.Exception (bracket)
+import qualified Data.Reflection as Reflection (given)
 import Control.Tracer (Tracer)
+import Data.Time.Clock (secondsToDiffTime)
 import qualified System.Directory (createDirectoryIfMissing)
+import System.FilePath ((</>))
 
-import qualified Cardano.Binary as Binary (fromCBOR, toCBOR)
-import qualified Cardano.Chain.Block as Cardano (HeaderHash)
+import qualified Cardano.Chain.Genesis as Cardano.Genesis (Config)
 import qualified Cardano.Chain.Slotting as Cardano (EpochSlots (..))
+import qualified Cardano.Crypto as Crypto (ProtocolMagicId)
 
-import Ouroboros.Byron.Proxy.DB (DB, DBTrace)
-import qualified Ouroboros.Byron.Proxy.DB as DB
-import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Index
-import qualified Ouroboros.Storage.Common as Immutable
-import qualified Ouroboros.Storage.EpochInfo as Immutable
-import qualified Ouroboros.Storage.ImmutableDB.API as Immutable
-import qualified Ouroboros.Storage.ImmutableDB.Impl as Immutable
+import           Ouroboros.Byron.Proxy.Block (Block, isEBB)
+import qualified Ouroboros.Byron.Proxy.Block as Byron.Proxy
+import           Ouroboros.Byron.Proxy.Index.Types (Index)
+import qualified Ouroboros.Byron.Proxy.Index.ChainDB as Index (trackChainDB)
+import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Sqlite
+import Ouroboros.Consensus.Block (GetHeader (Header))
+import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
+import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
+import qualified Ouroboros.Consensus.Ledger.Byron as Byron
+import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import qualified Ouroboros.Consensus.Protocol.PBFT as PBFT
+import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..), NumCoreNodes (..))
+import Ouroboros.Consensus.Node.ProtocolInfo.Byron (protocolInfoByron)
+import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry, withThreadRegistry)
 import Ouroboros.Storage.FS.API.Types (MountPoint (..))
-import Ouroboros.Storage.FS.API (HasFS)
-import Ouroboros.Storage.FS.IO (HandleIO, ioHasFS)
-import qualified Ouroboros.Storage.Util.ErrorHandling as FS (exceptions)
-
--- This module makes it convenient to set up a DB (ImmutableDB, HasFS, and
--- SQLite index) in IO, handling cardano-sl block types.
+import Ouroboros.Storage.FS.IO (ioHasFS)
+import Ouroboros.Storage.Common (EpochSize (..))
+import Ouroboros.Storage.ChainDB.API (ChainDB)
+import qualified Ouroboros.Storage.ChainDB.API as ChainDB
+import qualified Ouroboros.Storage.ChainDB.Impl as ChainDB
+import Ouroboros.Storage.ChainDB.Impl.Args (ChainDbArgs (..))
+import Ouroboros.Storage.ImmutableDB.Types (ValidationPolicy (..))
+import Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
+import Ouroboros.Storage.LedgerDB.MemPolicy (defaultMemPolicy)
+import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
 data DBConfig = DBConfig
   { dbFilePath    :: !FilePath
     -- ^ Directory to house the `ImmutableDB`.
   , indexFilePath :: !FilePath
     -- ^ Path to the SQLite index.
-  , slotsPerEpoch :: !Cardano.EpochSlots
-    -- ^ Number of slots per epoch. Cannot handle a chain for which this is
-    -- not constant.
   }
 
 -- | Set up and use a DB.
 --
 -- The directory at `dbFilePath` will be created if it does not exist.
 withDB
-  :: DBConfig
-  -> Tracer IO DBTrace
-  -> (DB IO -> IO t)
+  :: forall cfg t .
+     ( ByronGiven ) -- For HasHeader instances
+  => Cardano.Genesis.Config
+  -> DBConfig
+  -> Tracer IO (ChainDB.TraceEvent (Block ByronConfig))
+  -> (Index IO (Header (Block ByronConfig)) -> ChainDB IO (Block ByronConfig) -> IO t)
   -> IO t
-withDB dbOptions tracer k = do
-  -- The ImmutableDB/Storage layer will not create a directory for us, we have
+withDB genesisConfig dbOptions tracer k = do
+  -- The ChainDB/Storage layer will not create a directory for us, we have
   -- to ensure it exists.
   System.Directory.createDirectoryIfMissing True (dbFilePath dbOptions)
-  let fsMountPoint :: MountPoint
-      fsMountPoint = MountPoint (dbFilePath dbOptions)
-      fs :: HasFS IO HandleIO
-      fs = ioHasFS fsMountPoint
-      getEpochSize _epoch = pure $ Immutable.EpochSize $
-        fromIntegral (Cardano.unEpochSlots (slotsPerEpoch dbOptions))
-  epochInfo <- Immutable.newEpochInfo getEpochSize
-  let openImmutableDB = Immutable.openDB
-        decodeHeaderHash
-        encodeHeaderHash
-        fs
-        FS.exceptions
-        epochInfo
-        Immutable.ValidateMostRecentEpoch
-        (DB.epochFileParser (slotsPerEpoch dbOptions) fs)
-  Index.withDB_ (indexFilePath dbOptions) $ \idx ->
-    Immutable.withDB openImmutableDB $ \idb ->
-      k (DB.mkDB throwIO tracer (slotsPerEpoch dbOptions) idx idb)
+  let epochSlots :: Cardano.EpochSlots
+      epochSlots = Reflection.given
+      pm :: Crypto.ProtocolMagicId
+      pm = Reflection.given
+      epochSize = EpochSize $
+        fromIntegral (Cardano.unEpochSlots epochSlots)
+      fp = dbFilePath dbOptions
+      securityParam = SecurityParam 2160
+      numCoreNodes = NumCoreNodes 42
+      coreNodeId = undefined -- Doesn't seem to matter
+      pbftParams = PBFT.PBftParams
+        { PBFT.pbftSecurityParam = securityParam
+        , PBFT.pbftNumNodes = 7
+        , PBFT.pbftSignatureWindow = 2160
+        , PBFT.pbftSignatureThreshold = 0.22
+        }
+      protocolInfo = protocolInfoByron numCoreNodes coreNodeId pbftParams genesisConfig Nothing
+      chainDBArgs :: ThreadRegistry IO -> ChainDbArgs IO (Block ByronConfig)
+      chainDBArgs = \threadRegistry -> ChainDB.ChainDbArgs
+        { cdbDecodeHash = Byron.decodeByronHeaderHash
+        , cdbEncodeHash = Byron.encodeByronHeaderHash
 
-encodeHeaderHash :: Cardano.HeaderHash -> CBOR.Encoding
-encodeHeaderHash = Binary.toCBOR
+        -- Must use a CBOR-in-CBOR codec for blocks, so that we don't lose the
+        -- EBB body data, which Byron peers require. The codec from
+        -- Ouroboros.Consensus.Ledger.Byron always encodes with empty body
+        -- and attributes, so it does not necessarily invert the decoder.
+        , cdbDecodeBlock = Byron.Proxy.decodeBlock epochSlots
+        , cdbEncodeBlock = Byron.Proxy.encodeBlock
 
-decodeHeaderHash :: CBOR.Decoder s Cardano.HeaderHash
-decodeHeaderHash = Binary.fromCBOR
+        , cdbDecodeLedger = Byron.decodeByronLedgerState
+        , cdbEncodeLedger = Byron.encodeByronLedgerState
+
+        , cdbDecodeChainState = Byron.decodeByronChainState
+        , cdbEncodeChainState = Byron.encodeByronChainState
+
+        , cdbErrImmDb = EH.exceptions
+        , cdbErrVolDb = EH.exceptions
+        , cdbErrVolDbSTM = EH.throwSTM
+
+        , cdbHasFSImmDb = ioHasFS $ MountPoint (fp </> "immutable")
+        , cdbHasFSVolDb = ioHasFS $ MountPoint (fp </> "volatile")
+        , cdbHasFSLgrDB = ioHasFS $ MountPoint (fp </> "ledger")
+
+        , cdbValidation = ValidateMostRecentEpoch
+        , cdbBlocksPerFile = 21600 -- ?
+        , cdbMemPolicy = defaultMemPolicy securityParam
+        , cdbDiskPolicy = defaultDiskPolicy securityParam (secondsToDiffTime 20)
+
+        , cdbNodeConfig = pInfoConfig protocolInfo
+        , cdbEpochSize = const (pure epochSize)
+        , cdbIsEBB = isEBB
+        , cdbGenesis = pure (pInfoInitLedger protocolInfo)
+
+        , cdbTracer = tracer
+        , cdbThreadRegistry = threadRegistry
+        , cdbGcDelay = secondsToDiffTime 20
+        }
+  withThreadRegistry $ \tr ->
+    bracket (ChainDB.openDB (chainDBArgs tr)) ChainDB.closeDB $ \cdb ->
+      Sqlite.withIndexAuto epochSlots (indexFilePath dbOptions) $ \idx ->
+        -- TODO replace seq with $ to run with the index. It will fail because
+        -- of a suspected ChainDB bug.
+        Index.trackChainDB idx cdb $ k idx cdb

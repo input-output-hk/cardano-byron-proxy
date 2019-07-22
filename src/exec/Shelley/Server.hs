@@ -4,19 +4,18 @@ module Shelley.Server
   ) where
 
 import Codec.SerialiseTerm (encodeTerm, decodeTerm)
-import Control.Concurrent (threadDelay)
 import Control.Concurrent.Async (wait)
-import Control.Exception (throwIO)
-import Control.Monad.Trans.Class (lift)
 import qualified Network.Socket as Network
 
 import qualified Cardano.Chain.Slotting as Cardano (EpochSlots)
+import Cardano.Crypto (ProtocolMagicId)
 
-import Ouroboros.Byron.Proxy.DB (DB)
+import Ouroboros.Byron.Proxy.Block (Block)
 import Ouroboros.Byron.Proxy.Network.Protocol (responderVersions)
-import Ouroboros.Byron.Proxy.ChainSync.Server (PollT, chainSyncServer)
+import Ouroboros.Byron.Proxy.ChainSync.Server (chainSyncServer)
 import Ouroboros.Network.Protocol.Handshake.Type (Accept (..))
-import Ouroboros.Network.Socket (AnyMuxResponderApp (..), withServerNode)
+import Ouroboros.Network.Socket (AnyResponderApp (..), newConnectionTable, withServerNode)
+import Ouroboros.Storage.ChainDB.API (ChainDB, newHeaderReader)
 
 import Orphans ()
 
@@ -28,40 +27,32 @@ data Options = Options
 -- | Run a Shelley server. It's just chain sync on cardano-ledger blocks.
 runServer
   :: Options
+  -> ProtocolMagicId
   -> Cardano.EpochSlots
-  -> DB IO
+  -> ChainDB IO (Block cfg)
   -> IO ()
-runServer serverOptions epochSlots db = do
+runServer serverOptions pm epochSlots db = do
   addrInfos <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
+  tbl <- newConnectionTable
   case addrInfos of
     [] -> error "no getAddrInfo"
-    (addrInfo : _) -> withServerNode
-      addrInfo
-      encodeTerm
-      decodeTerm
-      (\_ _ _ -> Accept)
-      (fmap AnyMuxResponderApp (responderVersions epochSlots app))
-      wait
+    (addrInfo : _) -> do
+      reader <- newHeaderReader db
+      withServerNode
+        tbl
+        addrInfo
+        encodeTerm
+        decodeTerm
+        -- TODO: this should be some proper type rather than a tuple
+        (,)
+        (\_ _ _ -> Accept)
+        (fmap AnyResponderApp (responderVersions pm epochSlots (app reader)))
+        (\_ -> wait)
 
   where
 
-  app = chainSyncServer epochSlots err poll db
+  app = \reader -> chainSyncServer db reader
 
   host = hostName serverOptions
   port = serviceName serverOptions
   addrInfoHints = Network.defaultHints
-  err =  throwIO
-
-  -- TODO configure this
-  -- microsecond polling time of the DB. Needed until there is a proper
-  -- storage layer.
-  usPoll = 1000000
-
-  -- Definition of how to poll in IO.
-  poll :: PollT IO
-  poll p m = do
-    s <- m
-    mbT <- p s
-    case mbT of
-      Nothing -> lift (threadDelay usPoll) >> poll p m
-      Just t  -> pure t

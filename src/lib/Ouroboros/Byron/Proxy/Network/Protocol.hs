@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralisedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Ouroboros.Byron.Proxy.Network.Protocol where
 
@@ -12,8 +13,6 @@ import Codec.SerialiseTerm (CodecCBORTerm (..))
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadThrow)
 import Control.Monad.IO.Unlift (MonadUnliftIO)
-import Control.Monad.Trans.Resource (ResourceT, runResourceT)
-import Control.Monad.Trans.Class (lift)
 import Control.Tracer (nullTracer)
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map as Map
@@ -22,17 +21,18 @@ import Data.Word (Word16)
 import Data.Void (Void)
 
 import qualified Cardano.Chain.Slotting as Cardano
+import Cardano.Crypto (ProtocolMagicId)
 
-import Network.TypedProtocol.Channel (hoistChannel)
-import Network.TypedProtocol.Codec (hoistCodec)
 import Network.TypedProtocol.Driver (runPeer)
-import Network.Mux.Interface (AppType (..), MuxApplication (..))
 import Network.Mux.Types (MiniProtocolLimits (..), ProtocolEnum (..))
+import Ouroboros.Consensus.Block (Header)
+import Ouroboros.Network.Mux (AppType (..), OuroborosApplication (..))
 import Ouroboros.Network.Protocol.ChainSync.Client (ChainSyncClient, chainSyncClientPeer)
 import Ouroboros.Network.Protocol.ChainSync.Server (ChainSyncServer, chainSyncServerPeer)
 import Ouroboros.Network.Protocol.Handshake.Version
 
-import Ouroboros.Byron.Proxy.ChainSync.Types (Block, Point)
+import Ouroboros.Byron.Proxy.Block (Block)
+import Ouroboros.Byron.Proxy.ChainSync.Types (Point)
 import qualified Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync (codec)
 
 -- | Version number for handshake. Needs Show and Serialise in order to be
@@ -67,29 +67,31 @@ instance MiniProtocolLimits Ptcl where
   maximumIngressQueue = const 0xffffffff
 
 initiatorVersions
-  :: ( MonadST m, MonadUnliftIO m, MonadThrow (ResourceT m) )
-  => Cardano.EpochSlots -- ^ Needed for the codec, sadly
-  -> ChainSyncClient Block Point (ResourceT m) ()
-  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication 'InitiatorApp Ptcl m LBS.ByteString () Void)
-initiatorVersions epochSlots client = Versions $ Map.fromList
+  :: ( Monad m, MonadST m, MonadUnliftIO m, MonadThrow m )
+  => ProtocolMagicId
+  -> Cardano.EpochSlots -- ^ Needed for the codec, sadly
+  -> ChainSyncClient (Header (Block cfg)) Point m ()
+  -> Versions VNumber (CodecCBORTerm Text) (OuroborosApplication InitiatorApp peer Ptcl m LBS.ByteString () Void)
+initiatorVersions pm epochSlots client = Versions $ Map.fromList
   [ (VNumber 0, Sigma () (Version clientMuxApp unitCodecCBORTerm))
   ]
   where
   clientPeer = chainSyncClientPeer client
-  codec = hoistCodec lift (ChainSync.codec epochSlots)
-  clientMuxApp = Application $ \_ _ -> MuxInitiatorApplication $ \ptcl channel -> case ptcl of
-    PtclChainSync -> runResourceT $ runPeer nullTracer codec (hoistChannel lift channel) clientPeer
+  codec = ChainSync.codec pm epochSlots
+  clientMuxApp = Application $ \_ _ -> OuroborosInitiatorApplication $ \peer ptcl channel -> case ptcl of
+    PtclChainSync -> runPeer nullTracer codec peer channel clientPeer
 
 responderVersions
-  :: ( MonadST m, MonadUnliftIO m, MonadThrow (ResourceT m) )
-  => Cardano.EpochSlots -- ^ Needed for the codec; must match that of the initiator.
-  -> ChainSyncServer Block Point (ResourceT m) ()
-  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication 'ResponderApp Ptcl m LBS.ByteString Void ())
-responderVersions epochSlots server = Versions $ Map.fromList
+  :: ( Monad m, MonadST m, MonadUnliftIO m, MonadThrow m )
+  => ProtocolMagicId
+  -> Cardano.EpochSlots -- ^ Needed for the codec; must match that of the initiator.
+  -> ChainSyncServer (Header (Block cfg)) Point m ()
+  -> Versions VNumber (CodecCBORTerm Text) (OuroborosApplication ResponderApp peer Ptcl m LBS.ByteString Void ())
+responderVersions pm epochSlots server = Versions $ Map.fromList
   [ (VNumber 0, Sigma () (Version serverMuxApp unitCodecCBORTerm))
   ]
   where
   serverPeer = chainSyncServerPeer server
-  codec = hoistCodec lift (ChainSync.codec epochSlots)
-  serverMuxApp = Application $ \_ _ -> MuxResponderApplication $ \ptcl channel -> case ptcl of
-    PtclChainSync -> runResourceT $ runPeer nullTracer codec (hoistChannel lift channel) serverPeer
+  codec = ChainSync.codec pm epochSlots
+  serverMuxApp = Application $ \_ _ -> OuroborosResponderApplication $ \peer ptcl channel -> case ptcl of
+    PtclChainSync -> runPeer nullTracer codec peer channel serverPeer
