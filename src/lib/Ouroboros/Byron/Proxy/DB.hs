@@ -67,7 +67,7 @@ epochFileParser epochSlots hasFS =
        (cborEpochFileParser' hasFS decoder hashOfEBB)
   where
   takeSlot :: Cardano.ABlockOrBoundary a -> SlotNo
-  takeSlot blk = case blk of
+  takeSlot block = case block of
     Cardano.ABOBBlock    blk -> SlotNo $ Cardano.unSlotNumber (Cardano.blockSlot blk)
     Cardano.ABOBBoundary ebb -> SlotNo $ Cardano.boundaryEpoch ebb * Cardano.unEpochSlots epochSlots
   decoder :: forall s . CBOR.Decoder s (Cardano.ABlockOrBoundary ByteSpan)
@@ -147,8 +147,8 @@ conduitFromIterator
   :: ( Monad m )
   => Iterator m
   -> ConduitT () DBRead m ()
-conduitFromIterator iterator = do
-  step <- lift $ next iterator
+conduitFromIterator iter = do
+  step <- lift $ next iter
   case step of
     Done -> pure ()
     NextBlock slot bytes iterator' -> do
@@ -254,7 +254,7 @@ dbAppendImpl
   -> IndexWrite m
   -> ImmutableDB Cardano.HeaderHash m
   -> DBAppend m
-dbAppendImpl err tracer epochSlots iwrite idb = DBAppend $ \blockToWrite -> do
+dbAppendImpl _err tracer epochSlots iwrite idb = DBAppend $ \blockToWrite -> do
   -- Must serialise as a `Block` rather than a `MainBlock` or `GenesisBlock`,
   -- because the epoch file parser needs to be able to discriminate them.
   let builder = case blockToWrite of
@@ -263,7 +263,7 @@ dbAppendImpl err tracer epochSlots iwrite idb = DBAppend $ \blockToWrite -> do
         CardanoBlockToWrite (Annotated _ bytes) ->
           Builder.byteString bytes
   slotNo <- case blockToWrite of
-    LegacyBlockToWrite b@(Left ebb) -> do
+    LegacyBlockToWrite (Left ebb) -> do
       -- Write the index first, so that if something goes wrong with the
       -- `appendEBB` to the `ImmutableDB`, the transaction will quit and the
       -- index/db will remain consistent.
@@ -273,7 +273,7 @@ dbAppendImpl err tracer epochSlots iwrite idb = DBAppend $ \blockToWrite -> do
       Index.updateTip iwrite hash epoch Index.EBBSlot
       Immutable.appendEBB idb epoch (coerceHashFromLegacy hash) builder
       pure slot
-    LegacyBlockToWrite b@(Right blk) -> do
+    LegacyBlockToWrite (Right blk) -> do
       let hash = CSL.headerHash blk
           (epoch, SlotNo wslot) = blockEpochAndRelativeSlot blk
           slot = SlotNo $ unEpochNo epoch * Cardano.unEpochSlots epochSlots + wslot
@@ -317,7 +317,7 @@ readFromImpl
   -> ImmutableDB Cardano.HeaderHash m
   -> Point
   -> m (IteratorResource m)
-readFromImpl err epochSlots idx idb point = case point of
+readFromImpl _err epochSlots idx idb point = case point of
   FromGenesis -> iteratorFromSlot Nothing
   -- Slot is given: just take an iterator from the `ImmutableDB`.
   FromPoint slot hash -> iteratorFromSlot (Just (slot, hash))
@@ -361,7 +361,7 @@ readTipImpl
   -> Index m
   -> ImmutableDB Cardano.HeaderHash m
   -> m Tip
-readTipImpl err epochSlots idx idb = do
+readTipImpl _err epochSlots _idx idb = do
   tip <- Immutable.getTip idb
   case tip of
     -- Empty DB. Hm...

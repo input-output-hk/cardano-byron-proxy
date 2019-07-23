@@ -30,10 +30,7 @@ import Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync (Block)
 import Ouroboros.Network.Socket
 import Ouroboros.Byron.Proxy.Network.Protocol
 
--- For orphan instances
-import qualified Control.Monad.Class.MonadThrow as NonStandard
-import qualified Control.Monad.Catch as Standard
-
+import Orphans ()
 import qualified Logging
 
 -- | Assumes there will never be a roll back. Validates each block that
@@ -69,7 +66,7 @@ clientFold tracer genesisConfig stopCondition cvs = Client.Fold $ pure $ Client.
       Right cvs' -> do
         maybeStop <- lift $ stopCondition block
         case maybeStop of
-          Just t -> pure $ Client.Stop ()
+          Just _ -> pure $ Client.Stop ()
           Nothing -> Client.runFold $ clientFold tracer genesisConfig stopCondition cvs'
   )
   (\_ _ -> error "got rollback")
@@ -169,17 +166,3 @@ main = do
       (initiatorVersions epochSlots client)
       (Just addrInfoLocal)
       addrInfoRemote
-
--- Orphan, forced upon me because of the IO sim stuff.
--- Required because we use ResourceT in the chain sync server, and `runPeer`
--- demands this non-standard `MonadThrow`. That could be fixed by returning
--- the failure reason rather than throwing it...
-
-instance NonStandard.MonadThrow (ResourceT IO) where
-  throwM = Standard.throwM
-  -- There's a default definition fo this which requires
-  -- NonStandard.MonadCatch (ResourceT IO). To avoid having to give those,
-  -- we'll just use the standard definition.
-  -- NB: it's weird huh? This implementation uses the _standard_ MonadMask
-  -- constraint, but the non-standard one is not defined.
-  bracket = Standard.bracket

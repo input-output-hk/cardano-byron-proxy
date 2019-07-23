@@ -227,7 +227,7 @@ chainSyncServerIdle epochSlots err poll db ss = case ss of
                     pure Nothing
                   -- EBBs come out of the DB with their hash so we can just
                   -- compare on that.
-                  DB.NextEBB epoch hash bytes iterator' -> do
+                  DB.NextEBB _epoch hash _bytes iterator' -> do
                     -- DB guarantees that `hash = pointHash point`.
                     pure $ Just (pointSlot point, hash, iterator', releaseKey)
                   -- The DB does not check that the hash matches, if the item is
@@ -303,7 +303,7 @@ chainSyncServerIdle epochSlots err poll db ss = case ss of
               Left cborError -> lift $ err cborError
               Right ablk -> case Binary.unAnnotated ablk of
                 Cardano.ABOBBlock _ -> error "Corrupt DB: block where EBB expected"
-                Cardano.ABOBBoundary ebb -> do
+                Cardano.ABOBBoundary _ebb -> do
                   dbTip <- lift $ DB.readTip db
                   tipPoint' <- lift $ pickBetterTip epochSlots err tipPoint dbTip
                   let ss' = KnownTip tipPoint' (Just (Point slot hash)) (Just (iterator', releaseKey))

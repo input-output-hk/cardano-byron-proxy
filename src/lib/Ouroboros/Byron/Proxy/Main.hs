@@ -171,22 +171,22 @@ deriving instance Show Atom
 -- make and deposit an `Atom` into a queue.
 
 sendAtomToByron :: Diffusion IO -> Atom -> IO ()
-sendAtomToByron diffusion atom = case atom of
+sendAtomToByron diff atom = case atom of
 
-  Transaction tx -> void $ sendTx diffusion (getTxMsgContents tx)
+  Transaction tx -> void $ sendTx diff (getTxMsgContents tx)
 
-  UpdateProposal (up, uvs) -> sendUpdateProposal diffusion (hash up) up uvs
-  UpdateVote uv            -> sendVote diffusion uv
+  UpdateProposal (up, uvs) -> sendUpdateProposal diff (hash up) up uvs
+  UpdateVote uv            -> sendVote diff uv
 
-  Opening (MCOpening sid opening)      -> sendSscOpening diffusion sid opening
-  Shares (MCShares sid shares)         -> sendSscShares diffusion sid shares
-  VssCertificate (MCVssCertificate vc) -> sendSscCert diffusion (getCertId vc) vc
-  Commitment (MCCommitment commitment) -> sendSscCommitment diffusion sid commitment
+  Opening (MCOpening sid opening)      -> sendSscOpening diff sid opening
+  Shares (MCShares sid shares)         -> sendSscShares diff sid shares
+  VssCertificate (MCVssCertificate vc) -> sendSscCert diff (getCertId vc) vc
+  Commitment (MCCommitment commitment) -> sendSscCommitment diff sid commitment
     where
     (pk, _, _) = commitment
     sid = addressHash pk
 
-  Delegation psk -> sendPskHeavy diffusion psk
+  Delegation psk -> sendPskHeavy diff psk
 
 -- | Information about the best tip from the Byron network.
 data BestTip tip = BestTip
@@ -254,11 +254,11 @@ bbsStreamBlocks db onErr hh k = bracket (DB.readFrom db (DB.FromHash hh)) DB.clo
       Nothing -> pure ()
       Just (DB.ReadEBB slot _ bytes) -> case decodeFull bytes of
         Left err -> lift $ onErr slot err
-        Right (Right blk :: Block) -> lift $ onErr slot "block where EBB expected"
+        Right (Right _blk :: Block) -> lift $ onErr slot "block where EBB expected"
         Right (Left ebb  :: Block) -> yield (Left ebb)  >> decode
       Just (DB.ReadBlock slot bytes) -> case decodeFull bytes of
         Left err -> lift $ onErr slot err
-        Right (Left ebb  :: Block) -> lift $ onErr slot "EBB where block expected"
+        Right (Left _ebb  :: Block) -> lift $ onErr slot "EBB where block expected"
         Right (Right blk :: Block) -> yield (Right blk) >> decode
 
 bbsGetSerializedBlock
@@ -417,7 +417,7 @@ withByronProxy
   -> DB IO
   -> (ByronProxy -> IO t)
   -> IO t
-withByronProxy trace bpc db k =
+withByronProxy trace bpc db act =
   -- Create pools for all relayed data.
   -- TODO what about for delegation certificates?
   withPool (bpcPoolRoundInterval bpc) $ \(txPool :: TxPool) ->
@@ -441,10 +441,10 @@ withByronProxy trace bpc db k =
     atomSendQueue :: TBQueue Atom <- newTBQueueIO (bpcSendQueueSize bpc)
 
     let byronProxy :: Diffusion IO -> ByronProxy
-        byronProxy diffusion = ByronProxy
+        byronProxy diff = ByronProxy
           { bestTip = takeBestTip
-          , downloadChain = streamBlocks diffusion
-          , announceChain = announceBlockHeader diffusion
+          , downloadChain = streamBlocks diff
+          , announceChain = announceBlockHeader diff
           , recvAtom = readTBQueue atomRecvQueue
           , sendAtom = writeTBQueue atomSendQueue
           }
@@ -453,10 +453,10 @@ withByronProxy trace bpc db k =
         takeBestTip = readTVar tipsTVar
 
         sendingThread :: forall x . Diffusion IO -> IO x
-        sendingThread diffusion = do
+        sendingThread diff = do
           atom <- atomically $ readTBQueue atomSendQueue
-          sendAtomToByron diffusion atom
-          sendingThread diffusion
+          sendAtomToByron diff atom
+          sendingThread diff
 
         blockDecodeError :: forall x . SlotNo -> Text -> IO x
         blockDecodeError slot text = throwIO $ MalformedBlock slot text
@@ -539,7 +539,7 @@ withByronProxy trace bpc db k =
                 DB.TipGenesis -> do
                   traceWith trace (Error, "getTip: empty database")
                   throwIO $ EmptyDatabaseError
-                DB.TipEBB slot hash bytes -> case decodeFull bytes of
+                DB.TipEBB slot _hash bytes -> case decodeFull bytes of
                   Left cborError -> do
                     traceWith trace (Error, "getTip: malformed EBB")
                     throwIO $ MalformedBlock slot cborError
@@ -551,7 +551,7 @@ withByronProxy trace bpc db k =
                   Left cborError -> do
                     traceWith trace (Error, "getTip: malformed block")
                     throwIO $ MalformedBlock slot cborError
-                  Right (Left ebb) -> do
+                  Right (Left _ebb) -> do
                     traceWith trace (Error, "getTip: EBB where block expected")
                     throwIO $ MalformedBlock slot "EBB where block expected"
                   Right (Right blk :: Block) -> pure $ Right blk
@@ -583,4 +583,4 @@ withByronProxy trace bpc db k =
 
     diffusionLayerFull fdconf networkConfig Nothing mkLogic $ \diffusionLayer -> do
       runDiffusionLayer diffusionLayer $ withAsync (sendingThread (diffusion diffusionLayer)) $
-        \_ -> k (byronProxy (diffusion diffusionLayer))
+        \_ -> act (byronProxy (diffusion diffusionLayer))

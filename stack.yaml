@@ -123,6 +123,8 @@ extra-deps:
   - ekg-wai-0.1.0.3
   - lzma-clib-5.2.2
 
+ghc-options:
+  cardano-byron-proxy:     -Wall -Werror -Wcompat -fwarn-redundant-constraints -fwarn-incomplete-patterns -fwarn-unused-imports -Wincomplete-record-updates -Wincomplete-uni-patterns
 
 nix:
   shell-file: nix/stack-shell.nix

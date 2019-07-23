@@ -161,8 +161,8 @@ announce tracer mHashOfLatest db bp = do
     DB.TipEBB   _ _ _     -> pure mHashOfLatest
     -- Main blocks must be decoded to CSL blocks.
     DB.TipBlock _   bytes -> case CSL.decodeFull bytes of
-      Left txt                               -> error "announce: could not decode block"
-      Right (Left (ebb :: CSL.GenesisBlock)) -> error "announce: ebb where block expected"
+      Left _txt                               -> error "announce: could not decode block"
+      Right (Left (_ebb :: CSL.GenesisBlock)) -> error "announce: ebb where block expected"
       Right (Right (blk :: CSL.MainBlock))   -> do
         let header = blk ^. CSL.gbHeader
             hash   = Just (CSL.headerHash header)

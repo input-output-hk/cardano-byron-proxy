@@ -15,16 +15,16 @@ extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Ouroboros.Byron.Proxy.DB,
-                       Ouroboros.Byron.Proxy.Pool,
-                       Ouroboros.Byron.Proxy.Main,
+  exposed-modules:     Ouroboros.Byron.Proxy.DB
+                       Ouroboros.Byron.Proxy.Pool
+                       Ouroboros.Byron.Proxy.Main
 
-                       Ouroboros.Byron.Proxy.Index.Sqlite,
-                       Ouroboros.Byron.Proxy.Index.Types,
+                       Ouroboros.Byron.Proxy.Index.Sqlite
+                       Ouroboros.Byron.Proxy.Index.Types
 
-                       Ouroboros.Byron.Proxy.ChainSync.Client,
-                       Ouroboros.Byron.Proxy.ChainSync.Server,
-                       Ouroboros.Byron.Proxy.ChainSync.Types,
+                       Ouroboros.Byron.Proxy.ChainSync.Client
+                       Ouroboros.Byron.Proxy.ChainSync.Server
+                       Ouroboros.Byron.Proxy.ChainSync.Types
 
                        Ouroboros.Byron.Proxy.Network.Protocol
   -- other-modules:
@@ -66,8 +66,13 @@ library
                        unliftio-core
   hs-source-dirs:      src/lib
   default-language:    Haskell2010
-  ghc-options:         -fwarn-incomplete-patterns
+  ghc-options:         -Wall
+                       -Wcompat
+                       -fwarn-redundant-constraints
+                       -fwarn-incomplete-patterns
                        -fwarn-unused-imports
+                       -Wincomplete-record-updates
+                       -Wincomplete-uni-patterns
 
 executable cardano-byron-proxy
   main-is:             Main.hs
@@ -113,12 +118,18 @@ executable cardano-byron-proxy
   -- -threaded is needed or else the diffusion layer will crash, due to a use
   -- of registerDelay
   ghc-options:         -threaded
+                       -Wall
+                       -Wcompat
+                       -fwarn-redundant-constraints
                        -fwarn-incomplete-patterns
                        -fwarn-unused-imports
+                       -Wincomplete-record-updates
+                       -Wincomplete-uni-patterns
 
 executable validator
   main-is:             Validator.hs
   other-modules:       Logging
+                       Orphans
   -- other-extensions:
   build-depends:       base,
                        cardano-byron-proxy,
@@ -143,5 +154,10 @@ executable validator
   -- -threaded is needed or else the diffusion layer will crash, due to a use
   -- of registerDelay
   ghc-options:         -threaded
+                       -Wall
+                       -Wcompat
+                       -fwarn-redundant-constraints
                        -fwarn-incomplete-patterns
                        -fwarn-unused-imports
+                       -Wincomplete-record-updates
+                       -Wincomplete-uni-patterns
