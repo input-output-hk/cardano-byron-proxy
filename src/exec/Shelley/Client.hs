@@ -80,8 +80,8 @@ runClient options tracer epochSlots db = do
           }
           where
           hhash = case Binary.decodeFullAnnotatedBytes (Text.pack "Block or boundary") (Cardano.fromCBORABlockOrBoundary epochSlots) bytes of
-            Left cborError -> error "failed to decode block"
-            Right blk -> case blk of
+            Left _cborError -> error "failed to decode block"
+            Right block -> case block of
               Cardano.ABOBBoundary _ -> error "Corrupt DB: expected block but got EBB"
               Cardano.ABOBBlock blk  -> Cardano.blockHashAnnotated blk
       case mPoint of

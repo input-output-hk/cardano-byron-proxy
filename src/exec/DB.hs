@@ -55,7 +55,7 @@ withDB dbOptions tracer k = do
       fsMountPoint = MountPoint (dbFilePath dbOptions)
       fs :: HasFS IO HandleIO
       fs = ioHasFS fsMountPoint
-      getEpochSize epoch = pure $ Immutable.EpochSize $
+      getEpochSize _epoch = pure $ Immutable.EpochSize $
         fromIntegral (Cardano.unEpochSlots (slotsPerEpoch dbOptions))
   epochInfo <- Immutable.newEpochInfo getEpochSize
   let openImmutableDB = Immutable.openDB

@@ -67,10 +67,10 @@ instance MiniProtocolLimits Ptcl where
   maximumIngressQueue = const 0xffffffff
 
 initiatorVersions
-  :: ( Monad m, MonadST m, MonadUnliftIO m, MonadThrow m, MonadThrow (ResourceT m) )
+  :: ( MonadST m, MonadUnliftIO m, MonadThrow (ResourceT m) )
   => Cardano.EpochSlots -- ^ Needed for the codec, sadly
   -> ChainSyncClient Block Point (ResourceT m) ()
-  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication InitiatorApp Ptcl m LBS.ByteString () Void)
+  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication 'InitiatorApp Ptcl m LBS.ByteString () Void)
 initiatorVersions epochSlots client = Versions $ Map.fromList
   [ (VNumber 0, Sigma () (Version clientMuxApp unitCodecCBORTerm))
   ]
@@ -81,10 +81,10 @@ initiatorVersions epochSlots client = Versions $ Map.fromList
     PtclChainSync -> runResourceT $ runPeer nullTracer codec (hoistChannel lift channel) clientPeer
 
 responderVersions
-  :: ( Monad m, MonadST m, MonadUnliftIO m, MonadThrow m, MonadThrow (ResourceT m) )
+  :: ( MonadST m, MonadUnliftIO m, MonadThrow (ResourceT m) )
   => Cardano.EpochSlots -- ^ Needed for the codec; must match that of the initiator.
   -> ChainSyncServer Block Point (ResourceT m) ()
-  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication ResponderApp Ptcl m LBS.ByteString Void ())
+  -> Versions VNumber (CodecCBORTerm Text) (MuxApplication 'ResponderApp Ptcl m LBS.ByteString Void ())
 responderVersions epochSlots server = Versions $ Map.fromList
   [ (VNumber 0, Sigma () (Version serverMuxApp unitCodecCBORTerm))
   ]
