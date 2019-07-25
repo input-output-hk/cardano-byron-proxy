@@ -9,7 +9,7 @@ in {
   options.services.byron-proxy = {
     enable = mkEnableOption name;
     environment = mkOption {
-      type = types.enum [ "mainnet" "staging" "testnet" ];
+      type = types.enum (builtins.attrNames (import ../.. {}).environments);
       default = "mainnet";
     };
     proxyPort = mkOption {
