@@ -10,10 +10,10 @@
 
 {-# LANGUAGE TypeFamilies #-}
 
-import Control.Concurrent.Async (concurrently)
 import Control.Exception (throwIO)
 import Control.Monad (void)
 import Control.Monad.Trans.Except (runExceptT)
+import Control.Monad.Class.MonadAsync (concurrently, wait)
 import Control.Tracer (Tracer (..), contramap, traceWith)
 import Data.Coerce (coerce)
 import qualified Data.Fixed as Fixed (resolution)
@@ -29,6 +29,7 @@ import qualified Data.Text.Lazy.Builder as Text
 import Data.Time.Clock (NominalDiffTime, UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Word (Word16)
+import qualified Network.Socket as Network (HostName, ServiceName, defaultHints, getAddrInfo)
 import Numeric.Natural (Natural)
 import qualified Options.Applicative as Opt
 import System.FilePath (takeDirectory)
@@ -82,20 +83,30 @@ import qualified Pos.Util.Wlog as Wlog
 import Ouroboros.Byron.Proxy.Block (Block)
 import Ouroboros.Byron.Proxy.Index.Types (Index)
 import Ouroboros.Byron.Proxy.Main
-import Ouroboros.Consensus.Block (GetHeader (Header))
+import Ouroboros.Consensus.Block (BlockProtocol, GetHeader (Header))
+import Ouroboros.Consensus.BlockchainTime (BlockchainTime, SlotLength (..), SystemStart (..), realBlockchainTime)
 import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
+import Ouroboros.Consensus.Protocol (NodeConfig, NodeState)
+import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import qualified Ouroboros.Consensus.Protocol.PBFT as PBFT
+import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..), NumCoreNodes (..))
+import Ouroboros.Consensus.Node.ProtocolInfo.Byron (protocolInfoByron)
+import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry, withThreadRegistry)
 import Ouroboros.Network.Block (SlotNo (..), Point (..))
 import Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point (Block (..))
+import Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
+import Ouroboros.Network.Protocol.Handshake.Version (DictVersion (..))
+import Ouroboros.Network.Server.ConnectionTable (newConnectionTable)
+import Ouroboros.Network.NodeToNode (withServer)
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 import Ouroboros.Storage.ChainDB.Impl.Types (TraceEvent (..), TraceAddBlockEvent (..), TraceValidationEvent (..))
 
 import qualified Byron
 import DB (DBConfig (..), withDB)
 import qualified Logging as Logging
-import qualified Shelley.Client
-import qualified Shelley.Server
+import qualified Shelley as Shelley
 
 data ByronProxyOptions = ByronProxyOptions
   { bpoDatabasePath                :: !FilePath
@@ -103,8 +114,14 @@ data ByronProxyOptions = ByronProxyOptions
   , bpoLoggerConfigPath            :: !(Maybe FilePath)
     -- ^ Optional file path; will use default configuration if none given.
   , bpoCardanoConfigurationOptions :: !CSL.ConfigurationOptions
-  , bpoServerOptions               :: !Shelley.Server.Options
+  , bpoServerOptions               :: !ShelleyOptions
   , bpoClientOptions               :: !ClientOptions
+  }
+
+-- | Host and port on which to run the Shelley server.
+data ShelleyOptions = ShelleyOptions
+  { soHostName    :: !Network.HostName
+  , soServiceName :: !Network.ServiceName
   }
 
 data ByronClientOptions = ByronClientOptions
@@ -135,17 +152,10 @@ mkCSLTrace tracer = case tracer of
     Wlog.Warning -> Monitoring.Warning
     Wlog.Error   -> Monitoring.Error
 
--- | Until we have a storage layer which can deal with multiple sources, a
--- Shelley source for blocks will supercede a Byron source. You can still run
--- both a Byron server and a Shelley server (must run a Shelley server) but if
--- a Shelley client is given, blocks will not be downloaded from Byron.
---
--- NB: it's confusing/bad nomenclature: in order to get a Byron _server_ you
--- need to give Byron client options. That's because the diffusion layer for
--- Byron bundles both of these.
+-- | TODO add options for static Shelley peers, once we have the initiator
+-- side of the Shelley protocols defined.
 data ClientOptions = ClientOptions
-  { coShelley :: !(Maybe Shelley.Client.Options)
-  , coByron   :: !(Maybe ByronClientOptions)
+  { coByron   :: !(Maybe ByronClientOptions)
   }
 
 -- | Parser for command line options.
@@ -179,7 +189,7 @@ cliParser = ByronProxyOptions
 
   cliCardanoConfigurationOptions = CSL.configurationOptionsParser
 
-  cliServerOptions = Shelley.Server.Options
+  cliServerOptions = ShelleyOptions
     <$> cliHostName ["server"]
     <*> cliServiceName ["server"]
 
@@ -194,16 +204,11 @@ cliParser = ByronProxyOptions
     Opt.help "Port"
 
   cliClientOptions :: Opt.Parser ClientOptions
-  cliClientOptions = ClientOptions <$> cliShelleyClientOptions <*> cliByronClientOptions
+  cliClientOptions = ClientOptions <$> cliByronClientOptions
 
   cliByronClientOptions :: Opt.Parser (Maybe ByronClientOptions)
   cliByronClientOptions = Opt.optional $
     ByronClientOptions <$> cliNetworkConfig
-
-  cliShelleyClientOptions :: Opt.Parser (Maybe Shelley.Client.Options)
-  cliShelleyClientOptions = Opt.optional $ Shelley.Client.Options
-    <$> cliHostName ["remote"]
-    <*> cliServiceName ["remote"]
 
   -- We can't use `Pos.Infra.Network.CLI.networkConfigOption` from
   -- cardano-sl-infra because all of its fields are optional, but we need at
@@ -276,6 +281,34 @@ cliParserInfo = Opt.info cliParser infoMod
     <> Opt.progDesc "Store and forward blocks from a Byron or Shelley server"
     <> Opt.fullDesc
 
+runServer
+  :: ( ByronGiven )
+  => ShelleyOptions
+  -> ThreadRegistry IO
+  -> ChainDB IO (Block ByronConfig)
+  -> NodeConfig (BlockProtocol (Block ByronConfig))
+  -> NodeState (BlockProtocol (Block ByronConfig))
+  -> BlockchainTime IO
+  -> IO ()
+runServer options tr cdb nodeConf nodeState btime =
+  Shelley.withVersions tr cdb nodeConf nodeState btime $ \_initiator responder -> do
+    addrInfos <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
+    let myAddr = case addrInfos of
+          [] -> error "no getAddrInfo"
+          (addrInfo : _) -> addrInfo
+    connTable <- newConnectionTable
+    withServer
+      connTable
+      myAddr
+      Shelley.mkPeer
+      (\(DictVersion _) -> acceptEq)
+      responder
+      wait
+  where
+    addrInfoHints = Network.defaultHints
+    host = soHostName options
+    port = soServiceName options
+
 -- | The reflections constraints are needed for the cardano-sl configuration
 -- stuff, because the client may need to hit a Byron server using the logic
 -- and diffusion layer. This is OK: run it under a `withConfigurations`.
@@ -343,21 +376,16 @@ runClient tracer clientOptions genesisConfig pm epochSlots idx db =
 
   where
 
-  -- Download from Byron only if there is no Shelley client.
-  -- Always announce the header to Byron peers.
-  byronClient genesisBlock bp = case coShelley clientOptions of
-    Nothing -> void $ concurrently
-      (Byron.download textTracer genesisBlock epochSlots db bp k)
-      -- TODO turn announce back on, but don't do it for _every_ tip change.
-      -- Do it at most once every slot duration, maybe.
-      (Byron.announce Nothing                            db bp `seq` pure ())
-      where
-      k _ _ = pure ()
-    Just _  -> Byron.announce Nothing db bp
+  byronClient genesisBlock bp = void $ concurrently
+    (Byron.download textTracer genesisBlock epochSlots db bp k)
+    -- TODO turn announce back on, but don't do it for _every_ tip change.
+    -- Do it at most once every slot duration, maybe.
+    (Byron.announce Nothing                            db bp `seq` pure ())
+    where
+    k _ _ = pure ()
 
-  shelleyClient = case coShelley clientOptions of
-    Nothing -> pure ()
-    Just options -> Shelley.Client.runClient options textTracer pm epochSlots db
+  -- TODO implement Shelley initiator side.
+  shelleyClient = pure ()
 
   textTracer :: Tracer IO Text.Builder
   textTracer = contramap
@@ -573,7 +601,7 @@ main = do
       (CSL.ccTxValRules yamlConfig)
       (CSL.ccGenesis yamlConfig)
     -- New part.
-    -- It uses a MonadError constraint, so use runExceptT and throw an
+    -- Uses a MonadError constraint, so use runExceptT and throw an
     -- exception if it fails (the configuration error is not an Exception
     -- though, so userError is used).
     outcome <- runExceptT $ Cardano.mkConfigFromStaticConfig
@@ -632,9 +660,31 @@ main = do
                   in  doConvertedTrace val
               _ -> pure ()
         traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Opening database")
-        withDB newGenesisConfig dbc dbTracer $ \idx cdb -> do
-          traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
-          let server = Shelley.Server.runServer (bpoServerOptions bpo) protocolMagic epochSlots cdb
-              client = runClient (Logging.convertTrace' trace) (bpoClientOptions bpo) oldGenesisConfig protocolMagic epochSlots idx cdb
-          _ <- concurrently server client
-          pure ()
+        -- Thread registry is needed by ChainDB and by the network protocols.
+        -- I assume it's supposed to be shared?
+        withThreadRegistry $ \tr -> do
+          let -- TODO Compute this from config
+              securityParam = SecurityParam 2160
+              pbftParams = PBFT.PBftParams
+                { PBFT.pbftSecurityParam = securityParam
+                , PBFT.pbftNumNodes = 7
+                , PBFT.pbftSignatureWindow = 2160
+                , PBFT.pbftSignatureThreshold = 0.22
+                }
+              numCoreNodes = NumCoreNodes 42
+              coreNodeId = undefined
+              protocolInfo = protocolInfoByron numCoreNodes coreNodeId pbftParams newGenesisConfig Nothing
+              -- We need to use NodeConfig for the ChainDB but _also_ to get
+              -- the network protocols.
+              nodeConfig = pInfoConfig protocolInfo
+              nodeState = pInfoInitState protocolInfo
+              extLedgerState = pInfoInitLedger protocolInfo
+              slotDuration = SlotLength (Cardano.ppSlotDuration (Cardano.gdProtocolParameters (Cardano.configGenesisData newGenesisConfig)))
+              systemStart = SystemStart (Cardano.gdStartTime (Cardano.configGenesisData newGenesisConfig))
+          btime <- realBlockchainTime tr slotDuration systemStart
+          withDB dbc dbTracer tr securityParam nodeConfig extLedgerState $ \idx cdb -> do
+            traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
+            let server = runServer (bpoServerOptions bpo) tr cdb nodeConfig nodeState btime
+                client = runClient (Logging.convertTrace' trace) (bpoClientOptions bpo) oldGenesisConfig protocolMagic epochSlots idx cdb
+            _ <- concurrently server client
+            pure ()

@@ -29,6 +29,8 @@ let
       iohk-module
       {
         doHaddock = false;
+        enableLibraryProfiling = true;
+        enableExecutableProfiling = true;
       }
       {
         # Packages we wish to ignore version bounds of.

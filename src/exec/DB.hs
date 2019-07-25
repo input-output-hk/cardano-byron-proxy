@@ -14,7 +14,6 @@ import Data.Time.Clock (secondsToDiffTime)
 import qualified System.Directory (createDirectoryIfMissing)
 import System.FilePath ((</>))
 
-import qualified Cardano.Chain.Genesis as Cardano.Genesis (Config)
 import qualified Cardano.Chain.Slotting as Cardano (EpochSlots (..))
 import qualified Cardano.Crypto as Crypto (ProtocolMagicId)
 
@@ -23,15 +22,14 @@ import qualified Ouroboros.Byron.Proxy.Block as Byron.Proxy
 import           Ouroboros.Byron.Proxy.Index.Types (Index)
 import qualified Ouroboros.Byron.Proxy.Index.ChainDB as Index (trackChainDB)
 import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Sqlite
-import Ouroboros.Consensus.Block (GetHeader (Header))
+import Ouroboros.Consensus.Block (BlockProtocol, GetHeader (Header))
 import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
+import Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
-import qualified Ouroboros.Consensus.Protocol.PBFT as PBFT
-import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..), NumCoreNodes (..))
-import Ouroboros.Consensus.Node.ProtocolInfo.Byron (protocolInfoByron)
-import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry, withThreadRegistry)
+import Ouroboros.Consensus.Protocol (NodeConfig)
+import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
 import Ouroboros.Storage.FS.API.Types (MountPoint (..))
 import Ouroboros.Storage.FS.IO (ioHasFS)
 import Ouroboros.Storage.Common (EpochSize (..))
@@ -57,12 +55,15 @@ data DBConfig = DBConfig
 withDB
   :: forall cfg t .
      ( ByronGiven ) -- For HasHeader instances
-  => Cardano.Genesis.Config
-  -> DBConfig
+  => DBConfig
   -> Tracer IO (ChainDB.TraceEvent (Block ByronConfig))
+  -> ThreadRegistry IO
+  -> SecurityParam
+  -> NodeConfig (BlockProtocol (Block ByronConfig))
+  -> ExtLedgerState (Block ByronConfig)
   -> (Index IO (Header (Block ByronConfig)) -> ChainDB IO (Block ByronConfig) -> IO t)
   -> IO t
-withDB genesisConfig dbOptions tracer k = do
+withDB dbOptions tracer tr securityParam nodeConfig extLedgerState k = do
   -- The ChainDB/Storage layer will not create a directory for us, we have
   -- to ensure it exists.
   System.Directory.createDirectoryIfMissing True (dbFilePath dbOptions)
@@ -73,18 +74,8 @@ withDB genesisConfig dbOptions tracer k = do
       epochSize = EpochSize $
         fromIntegral (Cardano.unEpochSlots epochSlots)
       fp = dbFilePath dbOptions
-      securityParam = SecurityParam 2160
-      numCoreNodes = NumCoreNodes 42
-      coreNodeId = undefined -- Doesn't seem to matter
-      pbftParams = PBFT.PBftParams
-        { PBFT.pbftSecurityParam = securityParam
-        , PBFT.pbftNumNodes = 7
-        , PBFT.pbftSignatureWindow = 2160
-        , PBFT.pbftSignatureThreshold = 0.22
-        }
-      protocolInfo = protocolInfoByron numCoreNodes coreNodeId pbftParams genesisConfig Nothing
-      chainDBArgs :: ThreadRegistry IO -> ChainDbArgs IO (Block ByronConfig)
-      chainDBArgs = \threadRegistry -> ChainDB.ChainDbArgs
+      chainDBArgs :: ChainDbArgs IO (Block ByronConfig)
+      chainDBArgs = ChainDB.ChainDbArgs
         { cdbDecodeHash = Byron.decodeByronHeaderHash
         , cdbEncodeHash = Byron.encodeByronHeaderHash
 
@@ -114,18 +105,15 @@ withDB genesisConfig dbOptions tracer k = do
         , cdbMemPolicy = defaultMemPolicy securityParam
         , cdbDiskPolicy = defaultDiskPolicy securityParam (secondsToDiffTime 20)
 
-        , cdbNodeConfig = pInfoConfig protocolInfo
+        , cdbNodeConfig = nodeConfig
         , cdbEpochSize = const (pure epochSize)
         , cdbIsEBB = isEBB
-        , cdbGenesis = pure (pInfoInitLedger protocolInfo)
+        , cdbGenesis = pure extLedgerState
 
         , cdbTracer = tracer
-        , cdbThreadRegistry = threadRegistry
+        , cdbThreadRegistry = tr
         , cdbGcDelay = secondsToDiffTime 20
         }
-  withThreadRegistry $ \tr ->
-    bracket (ChainDB.openDB (chainDBArgs tr)) ChainDB.closeDB $ \cdb ->
-      Sqlite.withIndexAuto epochSlots (indexFilePath dbOptions) $ \idx ->
-        -- TODO replace seq with $ to run with the index. It will fail because
-        -- of a suspected ChainDB bug.
-        Index.trackChainDB idx cdb $ k idx cdb
+  bracket (ChainDB.openDB chainDBArgs) ChainDB.closeDB $ \cdb ->
+    Sqlite.withIndexAuto epochSlots (indexFilePath dbOptions) $ \idx ->
+      Index.trackChainDB idx cdb $ k idx cdb

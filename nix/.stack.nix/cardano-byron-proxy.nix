@@ -74,6 +74,7 @@
             (hsPkgs.cborg)
             (hsPkgs.containers)
             (hsPkgs.contra-tracer)
+            (hsPkgs.cryptonite)
             (hsPkgs.directory)
             (hsPkgs.exceptions)
             (hsPkgs.filepath)

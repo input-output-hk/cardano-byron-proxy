@@ -20,11 +20,7 @@ library
                        Ouroboros.Byron.Proxy.Main,
                        Ouroboros.Byron.Proxy.Index.ChainDB,
                        Ouroboros.Byron.Proxy.Index.Sqlite,
-                       Ouroboros.Byron.Proxy.Index.Types,
-                       Ouroboros.Byron.Proxy.ChainSync.Client,
-                       Ouroboros.Byron.Proxy.ChainSync.Server,
-                       Ouroboros.Byron.Proxy.ChainSync.Types,
-                       Ouroboros.Byron.Proxy.Network.Protocol
+                       Ouroboros.Byron.Proxy.Index.Types
   -- other-modules:
   -- other-extensions:
   build-depends:       base,
@@ -78,8 +74,7 @@ executable cardano-byron-proxy
                        DB,
                        Logging,
                        Orphans,
-                       Shelley.Client,
-                       Shelley.Server
+                       Shelley
   -- other-extensions:
   build-depends:       base,
                        async,
@@ -98,6 +93,7 @@ executable cardano-byron-proxy
                        cborg,
                        containers,
                        contra-tracer,
+                       cryptonite,
                        directory,
                        exceptions,
                        filepath,
