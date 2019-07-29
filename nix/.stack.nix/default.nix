@@ -42,8 +42,8 @@
         cardano-prelude-test = ./cardano-prelude-test.nix;
         cardano-shell = ./cardano-shell.nix;
         cardano-sl-x509 = ./cardano-sl-x509.nix;
-        ouroboros-network = ./ouroboros-network.nix;
         ouroboros-consensus = ./ouroboros-consensus.nix;
+        ouroboros-network = ./ouroboros-network.nix;
         io-sim-classes = ./io-sim-classes.nix;
         network-mux = ./network-mux.nix;
         typed-protocols = ./typed-protocols.nix;

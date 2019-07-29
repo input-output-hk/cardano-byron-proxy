@@ -60,7 +60,7 @@ import Pos.Infra.Network.Types (NetworkConfig (..))
 import Pos.Logic.Types hiding (streamBlocks)
 import qualified Pos.Logic.Types as Logic
 
-import Ouroboros.Byron.Proxy.Block (Block, Header, toSerializedBlock, blockBytes,
+import Ouroboros.Byron.Proxy.Block (Block, Header, toSerializedBlock,
                                     coerceHashFromLegacy, coerceHashToLegacy,
                                     headerHash)
 import Ouroboros.Byron.Proxy.Index.Types (Index)
@@ -68,6 +68,7 @@ import qualified Ouroboros.Byron.Proxy.Index.Types as Index
 import Ouroboros.Byron.Proxy.Pool (Pool, withPool)
 import qualified Ouroboros.Byron.Proxy.Pool as Pool (insert, lookup)
 import Ouroboros.Consensus.Block (getHeader)
+import Ouroboros.Consensus.Ledger.Byron (blockBytes)
 import Ouroboros.Network.Block (ChainUpdate (..), Point (..))
 import qualified Ouroboros.Network.Point as Point (block)
 import Ouroboros.Storage.ChainDB.API (ChainDB)

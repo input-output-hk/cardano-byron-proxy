@@ -11,7 +11,7 @@
 {-# LANGUAGE TypeFamilies #-}
 
 import Control.Exception (throwIO)
-import Control.Monad (void)
+import Control.Monad (unless, void)
 import Control.Monad.Trans.Except (runExceptT)
 import Control.Monad.Class.MonadAsync (concurrently, wait)
 import Control.Tracer (Tracer (..), contramap, traceWith)
@@ -663,17 +663,17 @@ main = do
         -- Thread registry is needed by ChainDB and by the network protocols.
         -- I assume it's supposed to be shared?
         withThreadRegistry $ \tr -> do
-          let -- TODO Compute this from config
+          let -- TODO Grab this from the newGenesisConfig config
               securityParam = SecurityParam 2160
-              pbftParams = PBFT.PBftParams
-                { PBFT.pbftSecurityParam = securityParam
-                , PBFT.pbftNumNodes = 7
-                , PBFT.pbftSignatureWindow = 2160
-                , PBFT.pbftSignatureThreshold = 0.22
-                }
-              numCoreNodes = NumCoreNodes 42
-              coreNodeId = undefined
-              protocolInfo = protocolInfoByron numCoreNodes coreNodeId pbftParams newGenesisConfig Nothing
+              protocolVersion = Cardano.ProtocolVersion 1 0 0
+              softwareVersion = Cardano.SoftwareVersion
+                (Cardano.ApplicationName (fromString "cardano-byron-proxy")) 2
+              protocolInfo = protocolInfoByron
+                newGenesisConfig
+                Nothing -- Default signature threshold.
+                protocolVersion
+                softwareVersion
+                Nothing
               -- We need to use NodeConfig for the ChainDB but _also_ to get
               -- the network protocols.
               nodeConfig = pInfoConfig protocolInfo

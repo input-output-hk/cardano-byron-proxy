@@ -18,7 +18,6 @@ import qualified Cardano.Chain.Slotting as Cardano (EpochSlots (..))
 import qualified Cardano.Crypto as Crypto (ProtocolMagicId)
 
 import           Ouroboros.Byron.Proxy.Block (Block, isEBB)
-import qualified Ouroboros.Byron.Proxy.Block as Byron.Proxy
 import           Ouroboros.Byron.Proxy.Index.Types (Index)
 import qualified Ouroboros.Byron.Proxy.Index.ChainDB as Index (trackChainDB)
 import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Sqlite
@@ -79,12 +78,8 @@ withDB dbOptions tracer tr securityParam nodeConfig extLedgerState k = do
         { cdbDecodeHash = Byron.decodeByronHeaderHash
         , cdbEncodeHash = Byron.encodeByronHeaderHash
 
-        -- Must use a CBOR-in-CBOR codec for blocks, so that we don't lose the
-        -- EBB body data, which Byron peers require. The codec from
-        -- Ouroboros.Consensus.Ledger.Byron always encodes with empty body
-        -- and attributes, so it does not necessarily invert the decoder.
-        , cdbDecodeBlock = Byron.Proxy.decodeBlock epochSlots
-        , cdbEncodeBlock = Byron.Proxy.encodeBlock
+        , cdbDecodeBlock = Byron.decodeByronBlock epochSlots
+        , cdbEncodeBlock = Byron.encodeByronBlock
 
         , cdbDecodeLedger = Byron.decodeByronLedgerState
         , cdbEncodeLedger = Byron.encodeByronLedgerState

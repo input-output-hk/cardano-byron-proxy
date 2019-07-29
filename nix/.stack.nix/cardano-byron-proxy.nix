@@ -88,6 +88,7 @@
             (hsPkgs.random)
             (hsPkgs.reflection)
             (hsPkgs.resourcet)
+            (hsPkgs.serialise)
             (hsPkgs.stm)
             (hsPkgs.text)
             (hsPkgs.time)

@@ -144,8 +144,8 @@ download tracer genesisBlock epochSlots db bp k = getStdGen >>= mainLoop Nothing
         -- encoding and decoding.
         forM_ orderedBlocks $ \blk -> do
           blk' <- recodeBlockOrFail epochSlots throwIO blk
-          k blk blk'
           ChainDB.addBlock db blk'
+          k blk blk'
         pure streamer
     , CSL.streamBlocksDone = pure ()
     }

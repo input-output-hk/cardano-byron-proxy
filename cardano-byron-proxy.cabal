@@ -107,6 +107,7 @@ executable cardano-byron-proxy
                        random,
                        reflection,
                        resourcet,
+                       serialise,
                        stm,
                        text,
                        time,

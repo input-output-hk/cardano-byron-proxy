@@ -5,8 +5,10 @@
 module Shelley where
 
 import qualified Codec.CBOR.Read as CBOR (DeserialiseFailure)
-import Control.Tracer (nullTracer)
+import qualified Codec.Serialise as Serialise (decode, encode)
+import Control.Tracer (nullTracer, stdoutTracer)
 import qualified Data.ByteString.Lazy as Lazy
+import Data.Functor.Contravariant (contramap)
 import qualified Data.Reflection as Reflection (given)
 import Data.Void (Void)
 import Network.Socket (SockAddr)
@@ -14,10 +16,11 @@ import Network.Socket (SockAddr)
 import Cardano.Chain.Slotting (EpochSlots)
 import Crypto.Random (drgNew)
 
-import Ouroboros.Byron.Proxy.Block (Block, decodeBlock, decodeHeader, encodeBlock, encodeHeader)
+import Ouroboros.Byron.Proxy.Block (Block)
 import Ouroboros.Consensus.Block (BlockProtocol)
 import Ouroboros.Consensus.Protocol (NodeConfig, NodeState)
-import Ouroboros.Consensus.Ledger.Byron (ByronGiven, decodeByronHeaderHash, encodeByronHeaderHash)
+import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
+import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
 import Ouroboros.Consensus.Util.Condense (Condense (..))
 import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
@@ -29,10 +32,14 @@ import Ouroboros.Network.Mux
 import Ouroboros.Network.Protocol.BlockFetch.Codec (codecBlockFetch)
 import Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSync)
 import Ouroboros.Network.Protocol.Handshake.Version
+import Ouroboros.Network.Protocol.TxSubmission.Codec (codecTxSubmission)
+import Ouroboros.Network.Protocol.LocalTxSubmission.Codec (codecLocalTxSubmission)
 import Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import Ouroboros.Consensus.Node
-import Ouroboros.Consensus.Node.Run.Abstract (nodeBlockFetchSize, nodeBlockMatchesHeader)
+import Ouroboros.Consensus.Node.Run.Abstract (nodeBlockFetchSize,
+           nodeBlockMatchesHeader, nodeDecodeGenTxId, nodeEncodeGenTxId,
+           nodeDecodeGenTx, nodeEncodeGenTx)
 import Ouroboros.Consensus.NodeNetwork
 
 newtype Peer = Peer { getPeer :: (SockAddr, SockAddr) }
@@ -70,13 +77,12 @@ networkApps
   => NodeParams IO Peer (Block ByronConfig)
   -> IO (NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ())
 networkApps nodeParams = do
-  let epochSlots = Reflection.given
   kernel <- nodeKernel nodeParams
   pure $ consensusNetworkApps
-    nullTracer
-    nullTracer
+    nullTracer -- (contramap show stdoutTracer)
+    nullTracer -- (contramap show stdoutTracer)
     kernel
-    (codecs epochSlots)
+    codecs
     (protocolHandlers nodeParams kernel)
 
 -- | Found in cardano-node that the network magic should be 0.
@@ -89,23 +95,39 @@ versions
 versions = simpleSingletonVersions NodeToNodeV_1 vData (DictVersion nodeToNodeCodecCBORTerm)
 
 codecs
-  :: EpochSlots
-  -> ProtocolCodecs (Block ByronConfig) CBOR.DeserialiseFailure IO Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString
-codecs epochSlots = ProtocolCodecs
+  :: ( ByronGiven )
+  => ProtocolCodecs (Block ByronConfig) CBOR.DeserialiseFailure IO Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString
+codecs = ProtocolCodecs
   { pcChainSyncCodec = codecChainSync
-      encodeHeader
-      (decodeHeader epochSlots)
-      (encodePoint encodeByronHeaderHash)
-      (decodePoint decodeByronHeaderHash)
+      Byron.encodeByronHeader
+      (Byron.decodeByronHeader epochSlots)
+      (encodePoint Byron.encodeByronHeaderHash)
+      (decodePoint Byron.decodeByronHeaderHash)
   , pcBlockFetchCodec = codecBlockFetch
-      encodeBlock
-      encodeByronHeaderHash
-      (decodeBlock epochSlots)
-      decodeByronHeaderHash
-  , pcTxSubmissionCodec = error "txSubmissionCodec"
-  , pcLocalChainSyncCodec = error "localChainSyncCodec"
-  , pcLocalTxSubmissionCodec = error "localTxSubmissionCodec"
+      Byron.encodeByronBlock
+      Byron.encodeByronHeaderHash
+      (Byron.decodeByronBlock epochSlots)
+      Byron.decodeByronHeaderHash
+  , pcTxSubmissionCodec = codecTxSubmission
+      nodeEncodeGenTxId
+      nodeDecodeGenTxId
+      nodeEncodeGenTx
+      nodeDecodeGenTx
+  , pcLocalChainSyncCodec = codecChainSync
+      Byron.encodeByronBlock
+      (Byron.decodeByronBlock epochSlots)
+      (encodePoint Byron.encodeByronHeaderHash)
+      (decodePoint Byron.decodeByronHeaderHash)
+  , pcLocalTxSubmissionCodec = codecLocalTxSubmission
+      nodeEncodeGenTx
+      nodeDecodeGenTx
+      -- Copied from cardano-node's choice.
+      Serialise.encode
+      Serialise.decode
   }
+  where
+  epochSlots :: EpochSlots
+  epochSlots = Reflection.given
 
 mkParams
   :: ( ByronGiven )
