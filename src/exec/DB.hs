@@ -37,7 +37,7 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Impl as ChainDB
 import Ouroboros.Storage.ChainDB.Impl.Args (ChainDbArgs (..))
 import Ouroboros.Storage.ImmutableDB.Types (ValidationPolicy (..))
-import Ouroboros.Storage.LedgerDB.DiskPolicy (defaultDiskPolicy)
+import Ouroboros.Storage.LedgerDB.DiskPolicy (DiskPolicy (..))
 import Ouroboros.Storage.LedgerDB.MemPolicy (defaultMemPolicy)
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH
 
@@ -73,6 +73,23 @@ withDB dbOptions tracer tr securityParam nodeConfig extLedgerState k = do
       epochSize = EpochSize $
         fromIntegral (Cardano.unEpochSlots epochSlots)
       fp = dbFilePath dbOptions
+      -- Don't use the default 'diskPolicy', because that is meant for core
+      -- nodes which update the ledger at most once (with one block) per slot
+      -- duration while we're updating the ledger with as many blocks as we
+      -- can download per slot duration.
+      --
+      -- When using the default 'diskPolicy', only one snapshot is made every
+      -- 12 hours, which is clearly not often enough for the
+      -- cardano-byron-proxy. Remember that without a recent snapshot, all the
+      -- transactions from the blocks newer than the most-recent on-disk
+      -- snapshot have to be replayed against it which requires reading those
+      -- blocks and executing the ledger rules, which significantly slows down
+      -- startup.
+      ledgerDiskPolicy = DiskPolicy
+        { onDiskNumSnapshots  = 2
+          -- Take a snapshot every 20s
+        , onDiskWriteInterval = return $ secondsToDiffTime 20
+        }
       chainDBArgs :: ChainDbArgs IO (Block ByronConfig)
       chainDBArgs = ChainDB.ChainDbArgs
         { cdbDecodeHash = Byron.decodeByronHeaderHash
@@ -98,7 +115,7 @@ withDB dbOptions tracer tr securityParam nodeConfig extLedgerState k = do
         , cdbValidation = ValidateMostRecentEpoch
         , cdbBlocksPerFile = 21600 -- ?
         , cdbMemPolicy = defaultMemPolicy securityParam
-        , cdbDiskPolicy = defaultDiskPolicy securityParam (secondsToDiffTime 20)
+        , cdbDiskPolicy = ledgerDiskPolicy
 
         , cdbNodeConfig = nodeConfig
         , cdbEpochSize = const (pure epochSize)
