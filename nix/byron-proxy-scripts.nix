@@ -1,6 +1,6 @@
 { commonLib
-, oldCardanoSrc
 , byronProxy
+, environments
 , customConfig
 , cardanoConfig
 }:
@@ -11,9 +11,6 @@ let
     proxyPort = 7777;
   };
   pkgs = commonLib.pkgs;
-  oldCardano = import oldCardanoSrc {};
-  oldCardanoLib = import (oldCardanoSrc + "/lib.nix");
-  environments = oldCardanoLib.environments;
   loggingConfig = ../cfg/logging.yaml;
   mkTopology = relay: pkgs.writeText "topology-file" ''
     wallet:
@@ -26,8 +23,7 @@ let
   '';
   configuration = cardanoConfig;
 
-in {
-  mainnet = mkProxyScript "mainnet";
-  staging = mkProxyScript "staging";
-  testnet = mkProxyScript "testnet";
-}
+in with builtins; listToAttrs (map 
+  (e: {name = e; value = mkProxyScript e;}) 
+  (attrNames environments)
+)

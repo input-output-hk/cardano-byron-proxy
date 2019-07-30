@@ -1,6 +1,6 @@
 { commonLib
-, oldCardanoSrc
 , byronProxy
+, environments
 , customConfig
 , cardanoConfig
 }:
@@ -11,9 +11,6 @@ let
     proxyPort = 7777;
   };
   pkgs = commonLib.pkgs;
-  oldCardano = import oldCardanoSrc {};
-  oldCardanoLib = import (oldCardanoSrc + "/lib.nix");
-  environments = oldCardanoLib.environments;
   loggingConfig = ../cfg/logging-validator.yaml;
   configuration = cardanoConfig;
   genesisFiles = {
@@ -33,8 +30,7 @@ let
   '';
 
 # TODO: add more environments when it isn't hard-coded to mainnet
-in {
-  mainnet = mkValidatorScript "mainnet";
-  staging = mkValidatorScript "staging";
-  testnet = mkValidatorScript "testnet";
-}
+in with builtins; listToAttrs (map 
+  (e: {name = e; value = mkValidatorScript e;}) 
+  (attrNames environments)
+)
