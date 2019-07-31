@@ -48,13 +48,6 @@ extra-deps:
       - typed-protocols
       - typed-protocols-cbor
 
-  # - ./../ouroboros-network/io-sim-classes
-  # - ./../ouroboros-network/network-mux
-  # - ./../ouroboros-network/ouroboros-network
-  # - ./../ouroboros-network/ouroboros-consensus
-  # - ./../ouroboros-network/typed-protocols
-  # - ./../ouroboros-network/typed-protocols-cbor
-
   - bimap-0.4.0
   - binary-0.8.7.0
   - time-units-1.0.0
