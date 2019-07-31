@@ -10,11 +10,12 @@
 
 {-# LANGUAGE TypeFamilies #-}
 
+import Codec.SerialiseTerm (decodeTerm, encodeTerm)
 import Control.Exception (throwIO)
-import Control.Monad (unless, void)
+import Control.Monad (mapM, unless, void)
 import Control.Monad.Trans.Except (runExceptT)
 import Control.Monad.Class.MonadAsync (concurrently, wait)
-import Control.Tracer (Tracer (..), contramap, traceWith)
+import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import Data.Coerce (coerce)
 import qualified Data.Fixed as Fixed (resolution)
 import Data.Functor.Contravariant (Op (..))
@@ -29,7 +30,7 @@ import qualified Data.Text.Lazy.Builder as Text
 import Data.Time.Clock (NominalDiffTime, UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Word (Word16)
-import qualified Network.Socket as Network (HostName, ServiceName, defaultHints, getAddrInfo)
+import qualified Network.Socket as Network
 import Numeric.Natural (Natural)
 import qualified Options.Applicative as Opt
 import System.FilePath (takeDirectory)
@@ -92,14 +93,16 @@ import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import qualified Ouroboros.Consensus.Protocol.PBFT as PBFT
 import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..), NumCoreNodes (..))
 import Ouroboros.Consensus.Node.ProtocolInfo.Byron (protocolInfoByron)
+import Ouroboros.Network.NodeToNode (withServer)
 import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry, withThreadRegistry)
 import Ouroboros.Network.Block (SlotNo (..), Point (..))
 import Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point (Block (..))
 import Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
 import Ouroboros.Network.Protocol.Handshake.Version (DictVersion (..))
-import Ouroboros.Network.Server.ConnectionTable (newConnectionTable)
-import Ouroboros.Network.NodeToNode (withServer)
+import Ouroboros.Network.Server.ConnectionTable (ConnectionTable)
+import Ouroboros.Network.Socket (connectToNode')
+import Ouroboros.Network.Subscription.Common (IPSubscriptionTarget (..), ipSubscriptionWorker)
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 import Ouroboros.Storage.ChainDB.Impl.Types (TraceEvent (..), TraceAddBlockEvent (..), TraceValidationEvent (..))
 
@@ -114,18 +117,33 @@ data ByronProxyOptions = ByronProxyOptions
   , bpoLoggerConfigPath            :: !(Maybe FilePath)
     -- ^ Optional file path; will use default configuration if none given.
   , bpoCardanoConfigurationOptions :: !CSL.ConfigurationOptions
-  , bpoServerOptions               :: !ShelleyOptions
-  , bpoClientOptions               :: !ClientOptions
+  , bpoShelleyOptions              :: !ShelleyOptions
+  , bpoByronOptions                :: !(Maybe ByronOptions)
   }
 
 -- | Host and port on which to run the Shelley server.
 data ShelleyOptions = ShelleyOptions
-  { soHostName    :: !Network.HostName
-  , soServiceName :: !Network.ServiceName
+  { soLocalAddress      :: !Address
+  , soProducerAddresses :: ![Address]
   }
 
-data ByronClientOptions = ByronClientOptions
-  { bcoCardanoNetworkOptions       :: !CSL.NetworkConfigOpts
+data Address = Address
+  { hostName    :: !Network.HostName
+  , serviceName :: !Network.ServiceName
+  }
+
+resolveAddress :: Address -> IO Network.AddrInfo
+resolveAddress addr = do
+  addrInfos <- Network.getAddrInfo
+    (Just Network.defaultHints)
+    (Just (hostName addr))
+    (Just (serviceName addr))
+  case addrInfos of
+    [] -> error "no getAddrInfo"
+    (addrInfo : _) -> pure addrInfo
+
+data ByronOptions = ByronOptions
+  { boNetworkOptions :: !CSL.NetworkConfigOpts
     -- ^ To use with `intNetworkConfigOpts` to get a `NetworkConfig` from
     -- cardano-sl, required in order to run a diffusion layer.
   }
@@ -152,12 +170,6 @@ mkCSLTrace tracer = case tracer of
     Wlog.Warning -> Monitoring.Warning
     Wlog.Error   -> Monitoring.Error
 
--- | TODO add options for static Shelley peers, once we have the initiator
--- side of the Shelley protocols defined.
-data ClientOptions = ClientOptions
-  { coByron   :: !(Maybe ByronClientOptions)
-  }
-
 -- | Parser for command line options.
 cliParser :: Opt.Parser ByronProxyOptions
 cliParser = ByronProxyOptions
@@ -165,8 +177,8 @@ cliParser = ByronProxyOptions
   <*> cliIndexPath
   <*> cliLoggerConfigPath
   <*> cliCardanoConfigurationOptions
-  <*> cliServerOptions
-  <*> cliClientOptions
+  <*> cliShelleyOptions
+  <*> cliByronOptions
 
   where
 
@@ -189,10 +201,17 @@ cliParser = ByronProxyOptions
 
   cliCardanoConfigurationOptions = CSL.configurationOptionsParser
 
-  cliServerOptions = ShelleyOptions
-    <$> cliHostName ["server"]
-    <*> cliServiceName ["server"]
+  cliShelleyOptions = ShelleyOptions
+    <$> cliAddress "local" "local address"
+    <*> Opt.many (cliAddress "producer" "producer address")
 
+  cliAddress :: String -> String -> Opt.Parser Address
+  cliAddress prefix help = fmap (uncurry Address) $ Opt.option Opt.auto $
+    Opt.long (dashconcat (prefix : ["addr"])) <>
+    Opt.metavar "(HOSTNAME,SERVIVCENAME)" <>
+    Opt.help help
+
+  {-
   cliHostName prefix = Opt.strOption $
     Opt.long (dashconcat (prefix ++ ["host"])) <>
     Opt.metavar "HOST" <>
@@ -202,13 +221,11 @@ cliParser = ByronProxyOptions
     Opt.long (dashconcat (prefix ++ ["port"])) <>
     Opt.metavar "PORT" <>
     Opt.help "Port"
+  -}
 
-  cliClientOptions :: Opt.Parser ClientOptions
-  cliClientOptions = ClientOptions <$> cliByronClientOptions
-
-  cliByronClientOptions :: Opt.Parser (Maybe ByronClientOptions)
-  cliByronClientOptions = Opt.optional $
-    ByronClientOptions <$> cliNetworkConfig
+  cliByronOptions :: Opt.Parser (Maybe ByronOptions)
+  cliByronOptions = Opt.optional $
+    ByronOptions <$> cliNetworkConfig
 
   -- We can't use `Pos.Infra.Network.CLI.networkConfigOption` from
   -- cardano-sl-infra because all of its fields are optional, but we need at
@@ -281,98 +298,103 @@ cliParserInfo = Opt.info cliParser infoMod
     <> Opt.progDesc "Store and forward blocks from a Byron or Shelley server"
     <> Opt.fullDesc
 
-runServer
-  :: ( ByronGiven )
-  => ShelleyOptions
+runShelleyServer
+  :: ( )
+  => Address
   -> ThreadRegistry IO
-  -> ChainDB IO (Block ByronConfig)
-  -> NodeConfig (BlockProtocol (Block ByronConfig))
-  -> NodeState (BlockProtocol (Block ByronConfig))
-  -> BlockchainTime IO
+  -> ConnectionTable IO
+  -> Shelley.ResponderVersions
   -> IO ()
-runServer options tr cdb nodeConf nodeState btime =
-  Shelley.withVersions tr cdb nodeConf nodeState btime $ \_initiator responder -> do
-    addrInfos <- Network.getAddrInfo (Just addrInfoHints) (Just host) (Just port)
-    let myAddr = case addrInfos of
-          [] -> error "no getAddrInfo"
-          (addrInfo : _) -> addrInfo
-    connTable <- newConnectionTable
-    withServer
-      connTable
-      myAddr
-      Shelley.mkPeer
-      (\(DictVersion _) -> acceptEq)
-      responder
-      wait
-  where
-    addrInfoHints = Network.defaultHints
-    host = soHostName options
-    port = soServiceName options
+runShelleyServer addr tr ctable rversions = do
+  addrInfo <- resolveAddress addr
+  withServer
+    ctable
+    addrInfo
+    Shelley.mkPeer
+    (\(DictVersion _) -> acceptEq)
+    rversions
+    wait
 
--- | The reflections constraints are needed for the cardano-sl configuration
--- stuff, because the client may need to hit a Byron server using the logic
--- and diffusion layer. This is OK: run it under a `withConfigurations`.
-runClient
+runShelleyClient
+  :: ( )
+  => [Address]
+  -> ThreadRegistry IO
+  -> ConnectionTable IO
+  -> Shelley.InitiatorVersions
+  -> IO ()
+runShelleyClient producerAddrs tr ctable iversions = do
+  -- Expect AddrInfo, convert to SockAddr, then pass to ipSubscriptionWorker
+  sockAddrs <- mapM resolveAddress producerAddrs
+  ipSubscriptionWorker
+    ctable
+    nullTracer
+    (Just (Network.SockAddrInet 0 0))
+    (Just (Network.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
+    (const Nothing)
+    (IPSubscriptionTarget {
+         ispIps     = fmap Network.addrAddress sockAddrs
+       , ispValency = length sockAddrs
+       })
+    (\sock -> do
+        connectToNode'
+          (\(DictVersion codec) -> encodeTerm codec)
+          (\(DictVersion codec) -> decodeTerm codec)
+          Shelley.mkPeer
+          (iversions)
+          sock
+    )
+    wait
+
+runByron
   :: ( CSL.HasConfigurations, ByronGiven )
   => Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
-  -> ClientOptions
+  -> ByronOptions
   -> CSL.Genesis.Config
   -> Cardano.ProtocolMagicId
   -> Cardano.EpochSlots
   -> Index IO (Header (Block ByronConfig))
   -> ChainDB IO (Block ByronConfig)
   -> IO ()
-runClient tracer clientOptions genesisConfig pm epochSlots idx db =
-
-  case coByron clientOptions of
-
-    -- If there's no Byron client, then there's also no Byron server, so we
-    -- just run the Shelley client, which may also be nothing (`pure ()`).
-    Nothing -> shelleyClient
-
-    -- If there is a Byron client, then there's also a Byron server, so we
-    -- run that, and then within the continuation decide whether to download
-    -- from Byron or Shelley depending on whether a Shelley client is defined.
-    Just byronClientOptions -> do
-      let cslTrace = mkCSLTrace tracer
-      -- Get the `NetworkConfig` from the options
-      networkConfig <- CSL.intNetworkConfigOpts
-        (Trace.named cslTrace)
-        (bcoCardanoNetworkOptions byronClientOptions)
-      let bpc :: ByronProxyConfig
-          bpc = ByronProxyConfig
-            { bpcAdoptedBVData = CSL.configBlockVersionData genesisConfig
-              -- ^ Hopefully that never needs to change.
-            , bpcEpochSlots = epochSlots
-            , bpcNetworkConfig = networkConfig
-                { ncEnqueuePolicy = Policy.defaultEnqueuePolicyRelay
-                , ncDequeuePolicy = Policy.defaultDequeuePolicyRelay
-                }
-              -- ^ These default relay policies should do what we want.
-              -- If not, could give a --policy option and use yaml files as in
-              -- cardano-sl
-            , bpcDiffusionConfig = CSL.FullDiffusionConfiguration
-                { CSL.fdcProtocolMagic = CSL.configProtocolMagic genesisConfig
-                , CSL.fdcProtocolConstants = CSL.configProtocolConstants genesisConfig
-                , CSL.fdcRecoveryHeadersMessage = CSL.recoveryHeadersMessage
-                , CSL.fdcLastKnownBlockVersion = CSL.lastKnownBlockVersion CSL.updateConfiguration
-                , CSL.fdcConvEstablishTimeout = CSL.networkConnectionTimeout
-                -- Diffusion layer logs will have "diffusion" in their names.
-                , CSL.fdcTrace = Trace.appendName "diffusion" cslTrace
-                , CSL.fdcStreamWindow = CSL.streamWindow
-                , CSL.fdcBatchSize    = 64
-                }
-              -- 40 seconds.
-              -- TODO configurable for these 3.
-            , bpcPoolRoundInterval = 40000000
-            , bpcSendQueueSize     = 1
-            , bpcRecvQueueSize     = 1
-            }
-          genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
-                                           (CSL.configGenesisHash genesisConfig)
-                                           (CSL.genesisLeaders genesisConfig)
-      withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc idx db $ \bp -> void $
-        concurrently (byronClient genesisBlock bp) shelleyClient
+runByron tracer byronOptions genesisConfig pm epochSlots idx db = do
+    let cslTrace = mkCSLTrace tracer
+    -- Get the `NetworkConfig` from the options
+    networkConfig <- CSL.intNetworkConfigOpts
+      (Trace.named cslTrace)
+      (boNetworkOptions byronOptions)
+    let bpc :: ByronProxyConfig
+        bpc = ByronProxyConfig
+          { bpcAdoptedBVData = CSL.configBlockVersionData genesisConfig
+            -- ^ Hopefully that never needs to change.
+          , bpcEpochSlots = epochSlots
+          , bpcNetworkConfig = networkConfig
+              { ncEnqueuePolicy = Policy.defaultEnqueuePolicyRelay
+              , ncDequeuePolicy = Policy.defaultDequeuePolicyRelay
+              }
+            -- ^ These default relay policies should do what we want.
+            -- If not, could give a --policy option and use yaml files as in
+            -- cardano-sl
+          , bpcDiffusionConfig = CSL.FullDiffusionConfiguration
+              { CSL.fdcProtocolMagic = CSL.configProtocolMagic genesisConfig
+              , CSL.fdcProtocolConstants = CSL.configProtocolConstants genesisConfig
+              , CSL.fdcRecoveryHeadersMessage = CSL.recoveryHeadersMessage
+              , CSL.fdcLastKnownBlockVersion = CSL.lastKnownBlockVersion CSL.updateConfiguration
+              , CSL.fdcConvEstablishTimeout = CSL.networkConnectionTimeout
+              -- Diffusion layer logs will have "diffusion" in their names.
+              , CSL.fdcTrace = Trace.appendName "diffusion" cslTrace
+              , CSL.fdcStreamWindow = CSL.streamWindow
+              , CSL.fdcBatchSize    = 64
+              }
+            -- 40 seconds.
+            -- TODO configurable for these 3.
+          , bpcPoolRoundInterval = 40000000
+          , bpcSendQueueSize     = 1
+          , bpcRecvQueueSize     = 1
+          }
+        genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
+                                         (CSL.configGenesisHash genesisConfig)
+                                         (CSL.genesisLeaders genesisConfig)
+    withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc idx db $ \bp ->
+      byronClient genesisBlock bp
 
   where
 
@@ -383,9 +405,6 @@ runClient tracer clientOptions genesisConfig pm epochSlots idx db =
     (Byron.announce Nothing                            db bp `seq` pure ())
     where
     k _ _ = pure ()
-
-  -- TODO implement Shelley initiator side.
-  shelleyClient = pure ()
 
   textTracer :: Tracer IO Text.Builder
   textTracer = contramap
@@ -684,7 +703,18 @@ main = do
           btime <- realBlockchainTime tr slotDuration systemStart
           withDB dbc dbTracer tr securityParam nodeConfig extLedgerState $ \idx cdb -> do
             traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
-            let server = runServer (bpoServerOptions bpo) tr cdb nodeConfig nodeState btime
-                client = runClient (Logging.convertTrace' trace) (bpoClientOptions bpo) oldGenesisConfig protocolMagic epochSlots idx cdb
-            _ <- concurrently server client
-            pure ()
+            Shelley.withVersions cdb nodeConfig nodeState btime $ \tr ctable iversions rversions -> do
+              let server = runShelleyServer (soLocalAddress      (bpoShelleyOptions bpo)) tr ctable rversions
+                  client = runShelleyClient (soProducerAddresses (bpoShelleyOptions bpo)) tr ctable iversions
+                  byron  = case bpoByronOptions bpo of
+                    Nothing -> pure ()
+                    Just bopts -> runByron
+                      (Logging.convertTrace' trace)
+                      bopts
+                      oldGenesisConfig
+                      protocolMagic
+                      epochSlots
+                      idx
+                      cdb
+              _ <- concurrently (concurrently server client) byron
+              pure ()

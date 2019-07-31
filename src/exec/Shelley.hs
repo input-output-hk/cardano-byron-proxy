@@ -6,9 +6,7 @@ module Shelley where
 
 import qualified Codec.CBOR.Read as CBOR (DeserialiseFailure)
 import qualified Codec.Serialise as Serialise (decode, encode)
-import Control.Tracer (nullTracer, stdoutTracer)
 import qualified Data.ByteString.Lazy as Lazy
-import Data.Functor.Contravariant (contramap)
 import qualified Data.Reflection as Reflection (given)
 import Data.Void (Void)
 import Network.Socket (SockAddr)
@@ -23,7 +21,7 @@ import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
 import Ouroboros.Consensus.Util.Condense (Condense (..))
-import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
+import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry, withThreadRegistry)
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 
 import Ouroboros.Network.Block (decodePoint, encodePoint)
@@ -34,9 +32,11 @@ import Ouroboros.Network.Protocol.ChainSync.Codec (codecChainSync)
 import Ouroboros.Network.Protocol.Handshake.Version
 import Ouroboros.Network.Protocol.TxSubmission.Codec (codecTxSubmission)
 import Ouroboros.Network.Protocol.LocalTxSubmission.Codec (codecLocalTxSubmission)
+import Ouroboros.Network.Server.ConnectionTable (ConnectionTable, newConnectionTable)
 import Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import Ouroboros.Consensus.Node
+import Ouroboros.Consensus.Node.Tracers (nullTracers)
 import Ouroboros.Consensus.Node.Run.Abstract (nodeBlockFetchSize,
            nodeBlockMatchesHeader, nodeDecodeGenTxId, nodeEncodeGenTxId,
            nodeDecodeGenTx, nodeEncodeGenTx)
@@ -58,18 +58,18 @@ type ResponderVersions = Versions NodeToNodeVersion DictVersion (AnyResponderApp
 -- Must have `ByronGiven` because of the constraints on `nodeKernel`
 withVersions
   :: ( ByronGiven )
-  => ThreadRegistry IO
-  -> ChainDB IO (Block ByronConfig)
+  => ChainDB IO (Block ByronConfig)
   -> NodeConfig (BlockProtocol (Block ByronConfig))
   -> NodeState (BlockProtocol (Block ByronConfig))
   -> BlockchainTime IO
-  -> (InitiatorVersions -> ResponderVersions -> IO t)
+  -> (ThreadRegistry IO -> ConnectionTable IO -> InitiatorVersions -> ResponderVersions -> IO t)
   -> IO t
-withVersions tr cdb conf state blockchainTime k = do
+withVersions cdb conf state blockchainTime k = withThreadRegistry $ \tr -> do
+  ctable <- newConnectionTable
   let params = mkParams tr cdb conf state blockchainTime
   apps <- networkApps params
   let vs = versions apps
-  k (initiatorNetworkApplication <$> vs) (responderNetworkApplication <$> vs)
+  k tr ctable (initiatorNetworkApplication <$> vs) (responderNetworkApplication <$> vs)
 
 -- | It's in `IO` because `nodeKernel` needs `IO`.
 networkApps
@@ -79,9 +79,8 @@ networkApps
 networkApps nodeParams = do
   kernel <- nodeKernel nodeParams
   pure $ consensusNetworkApps
-    nullTracer -- (contramap show stdoutTracer)
-    nullTracer -- (contramap show stdoutTracer)
     kernel
+    nullProtocolTracers
     codecs
     (protocolHandlers nodeParams kernel)
 
@@ -138,12 +137,7 @@ mkParams
   -> BlockchainTime IO
   -> NodeParams IO Peer (Block ByronConfig)
 mkParams tr cdb nconf nstate blockchainTime = NodeParams
-  { tracer = nullTracer
-  , mempoolTracer = nullTracer
-  , decisionTracer = nullTracer
-  , fetchClientTracer = nullTracer
-  , txInboundTracer = nullTracer
-  , txOutboundTracer = nullTracer
+  { tracers = nullTracers
   , threadRegistry = tr
   , maxClockSkew = ClockSkew 1
   , cfg = nconf
