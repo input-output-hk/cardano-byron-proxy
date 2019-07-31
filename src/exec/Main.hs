@@ -12,7 +12,7 @@
 
 import Codec.SerialiseTerm (decodeTerm, encodeTerm)
 import Control.Exception (throwIO)
-import Control.Monad (mapM, unless, void)
+import Control.Monad (mapM, void)
 import Control.Monad.Trans.Except (runExceptT)
 import Control.Monad.Class.MonadAsync (concurrently, wait)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
@@ -84,14 +84,12 @@ import qualified Pos.Util.Wlog as Wlog
 import Ouroboros.Byron.Proxy.Block (Block)
 import Ouroboros.Byron.Proxy.Index.Types (Index)
 import Ouroboros.Byron.Proxy.Main
-import Ouroboros.Consensus.Block (BlockProtocol, GetHeader (Header))
-import Ouroboros.Consensus.BlockchainTime (BlockchainTime, SlotLength (..), SystemStart (..), realBlockchainTime)
+import Ouroboros.Consensus.Block (GetHeader (Header))
+import Ouroboros.Consensus.BlockchainTime (SlotLength (..), SystemStart (..), realBlockchainTime)
 import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
-import Ouroboros.Consensus.Protocol (NodeConfig, NodeState)
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
-import qualified Ouroboros.Consensus.Protocol.PBFT as PBFT
-import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..), NumCoreNodes (..))
+import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..))
 import Ouroboros.Consensus.Node.ProtocolInfo.Byron (protocolInfoByron)
 import Ouroboros.Network.NodeToNode (withServer)
 import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry, withThreadRegistry)
@@ -631,7 +629,6 @@ main = do
     newGenesisConfig <- case outcome of
       Left confError -> throwIO (userError (show confError))
       Right it       -> pure it
-
     let epochSlots = Cardano.EpochSlots (fromIntegral (CSL.configEpochSlots oldGenesisConfig))
         protocolMagic = Cardano.ProtocolMagicId
           . fromIntegral -- Int32 -> Word32
