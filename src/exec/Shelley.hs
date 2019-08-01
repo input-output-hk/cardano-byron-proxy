@@ -11,6 +11,7 @@ import qualified Data.Reflection as Reflection (given)
 import Data.Void (Void)
 import Network.Socket (SockAddr)
 
+import Cardano.Binary (fromCBOR, toCBOR)
 import Cardano.Chain.Slotting (EpochSlots)
 import Crypto.Random (drgNew)
 
@@ -121,9 +122,11 @@ codecs = ProtocolCodecs
   , pcLocalTxSubmissionCodec = codecLocalTxSubmission
       nodeEncodeGenTx
       nodeDecodeGenTx
-      -- Copied from cardano-node's choice.
-      Serialise.encode
-      Serialise.decode
+      -- There is at the moment no codec for UTxOValidationError
+      -- 8d8d45ae7c98a1e9ebe2067da3a7f3500d8f2e94 in ouroboros-network
+      -- changed from Strnig to UTxOValidationError and this broke things.
+      (error "local tx submission reject encode")
+      (error "local tx submission reject decode")
   }
   where
   epochSlots :: EpochSlots
