@@ -276,7 +276,7 @@ bbsStreamBlocks
   -> Bool -- ^ Set True to yield the block at the start hash.
   -> (ConduitT () s IO () -> IO t)
   -> IO t
-bbsStreamBlocks epochSlots idx db onErr hh f yieldFirst k = do
+bbsStreamBlocks _ idx db _ hh f yieldFirst k = do
   mSlotNo <- Index.lookup idx (coerceHashFromLegacy hh)
   case mSlotNo of
     Nothing -> k (pure ())
@@ -324,7 +324,7 @@ bbsGetSerializedBlock
   -> ChainDB IO (Block cfg)
   -> Byron.Legacy.HeaderHash
   -> IO (Maybe SerializedBlock)
-bbsGetSerializedBlock epochSlots idx db hh = do
+bbsGetSerializedBlock _ idx db hh = do
   mSlotNo <- Index.lookup idx (coerceHashFromLegacy hh)
   case mSlotNo of
     Nothing -> pure Nothing
@@ -339,7 +339,7 @@ bbsGetBlockHeader
   -> (forall a . Text -> IO a)
   -> Byron.Legacy.HeaderHash
   -> IO (Maybe Byron.Legacy.BlockHeader)
-bbsGetBlockHeader epochSlots idx db onErr hh = do
+bbsGetBlockHeader _ idx db onErr hh = do
   mSlotNo <- Index.lookup idx (coerceHashFromLegacy hh)
   case mSlotNo of
     Nothing -> pure Nothing
@@ -374,7 +374,7 @@ bbsGetHashesRange
   -> Byron.Legacy.HeaderHash
   -> Byron.Legacy.HeaderHash
   -> IO (Maybe (OldestFirst NonEmpty Byron.Legacy.HeaderHash))
-bbsGetHashesRange epochSlots idx db onErr mLimit from to = do
+bbsGetHashesRange _ idx db onErr mLimit from to = do
   mFrom <- Index.lookup idx (coerceHashFromLegacy from)
   mTo   <- Index.lookup idx (coerceHashFromLegacy to)
   case (mFrom, mTo) of
@@ -671,8 +671,8 @@ withByronProxy trace bpc idx db k =
           -- at the given start hash! This is not documented in cardano-sl.
           -- That's done by giving `False` to `bbsStreamBlocks`, which uses
           -- the `ChainDB` `Reader` API to do streaming. It stops at a fork.
-          , Logic.streamBlocks   = \hh k ->
-              bbsStreamBlocks epochSlots idx db blockDecodeError hh (pure . toSerializedBlock) False k
+          , Logic.streamBlocks   = \hh l ->
+              bbsStreamBlocks epochSlots idx db blockDecodeError hh (pure . toSerializedBlock) False l
           }
 
         networkConfig = bpcNetworkConfig bpc
@@ -680,4 +680,4 @@ withByronProxy trace bpc idx db k =
 
     diffusionLayerFull fdconf networkConfig Nothing mkLogic $ \diffusionLayer -> do
       runDiffusionLayer diffusionLayer $ withAsync (sendingThread (diffusion diffusionLayer)) $
-        \_ -> act (byronProxy (diffusion diffusionLayer))
+        \_ -> k (byronProxy (diffusion diffusionLayer))

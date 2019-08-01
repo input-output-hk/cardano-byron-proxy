@@ -196,9 +196,9 @@ sqliteRollforward epochSlots conn hdr =
 
   epoch, slot :: Int
   (epoch, slot) = case unByronHeaderOrEBB hdr of
-    Left  bvd -> (fromIntegral (Cardano.boundaryEpoch bvd), -1)
-    Right hdr ->
-      fromIntegral (unSlotNumber (Binary.unAnnotated (Cardano.aHeaderSlot hdr)))
+    Left  bvd  -> (fromIntegral (Cardano.boundaryEpoch bvd), -1)
+    Right hdr' ->
+      fromIntegral (unSlotNumber (Binary.unAnnotated (Cardano.aHeaderSlot hdr')))
       `quotRem`
       fromIntegral (unEpochSlots epochSlots)
 
@@ -211,10 +211,6 @@ sql_delete = "DELETE FROM block_index;"
 sql_delete_from :: Query
 sql_delete_from =
   "DELETE FROM block_index WHERE epoch > ? OR (epoch == ? AND slot > ?);"
-
-sql_delete_from_ebb :: Query
-sql_delete_from_ebb =
-  "DELETE FROM block_index WHERE epoch > ? OR (epoch == ? AND slot > ?) OR (epoch == ? AND slot == ? AND hash == ?);"
 
 -- | Roll backward to a point, deleting every entry for a block strictly
 -- greater than the slot at that point. If the point is not in the database,

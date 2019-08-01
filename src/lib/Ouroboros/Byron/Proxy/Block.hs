@@ -54,5 +54,5 @@ headerHash hdr = case unByronHeaderOrEBB hdr of
 
 isEBB :: Block cfg -> Maybe Cardano.HeaderHash
 isEBB blk = case unByronBlockOrEBB blk of
-  Cardano.ABOBBlock _    -> Nothing
-  Cardano.ABOBBoundary b -> Just $ headerHash (Consensus.getHeader blk)
+  Cardano.ABOBBlock    _ -> Nothing
+  Cardano.ABOBBoundary _ -> Just $ headerHash (Consensus.getHeader blk)

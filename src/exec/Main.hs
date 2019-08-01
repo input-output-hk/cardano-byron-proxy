@@ -303,7 +303,7 @@ runShelleyServer
   -> ConnectionTable IO
   -> Shelley.ResponderVersions
   -> IO ()
-runShelleyServer addr tr ctable rversions = do
+runShelleyServer addr _ ctable rversions = do
   addrInfo <- resolveAddress addr
   withServer
     ctable
@@ -320,7 +320,7 @@ runShelleyClient
   -> ConnectionTable IO
   -> Shelley.InitiatorVersions
   -> IO ()
-runShelleyClient producerAddrs tr ctable iversions = do
+runShelleyClient producerAddrs _ ctable iversions = do
   -- Expect AddrInfo, convert to SockAddr, then pass to ipSubscriptionWorker
   sockAddrs <- mapM resolveAddress producerAddrs
   ipSubscriptionWorker
@@ -353,7 +353,7 @@ runByron
   -> Index IO (Header (Block ByronConfig))
   -> ChainDB IO (Block ByronConfig)
   -> IO ()
-runByron tracer byronOptions genesisConfig pm epochSlots idx db = do
+runByron tracer byronOptions genesisConfig _ epochSlots idx db = do
     let cslTrace = mkCSLTrace tracer
     -- Get the `NetworkConfig` from the options
     networkConfig <- CSL.intNetworkConfigOpts
@@ -602,9 +602,7 @@ main = do
     -- configuration comes from: slots-per-epoch in particular.
     -- We'll use the tracer that was just set up to give debug output. That
     -- requires converting the iohk-monitoring trace to the one used in CSL.
-    let cslTrace = mkCSLTrace (Logging.convertTrace' trace)
-        infoTrace = contramap ((,) Wlog.Info) (Trace.named cslTrace)
-        confOpts = bpoCardanoConfigurationOptions bpo
+    let confOpts = bpoCardanoConfigurationOptions bpo
     -- Legacy cardano-sl genesis configuration is used. Then, it's converted
     -- to the new cardano-ledger style.
     yamlConfig <- CSL.parseYamlConfig (CSL.cfoFilePath confOpts) (CSL.cfoKey confOpts)
@@ -678,7 +676,7 @@ main = do
         traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Opening database")
         -- Thread registry is needed by ChainDB and by the network protocols.
         -- I assume it's supposed to be shared?
-        withThreadRegistry $ \tr -> do
+        withThreadRegistry $ \treg -> do
           let -- TODO Grab this from the newGenesisConfig config
               securityParam = SecurityParam 2160
               protocolVersion = Cardano.ProtocolVersion 1 0 0
@@ -697,12 +695,12 @@ main = do
               extLedgerState = pInfoInitLedger protocolInfo
               slotDuration = SlotLength (Cardano.ppSlotDuration (Cardano.gdProtocolParameters (Cardano.configGenesisData newGenesisConfig)))
               systemStart = SystemStart (Cardano.gdStartTime (Cardano.configGenesisData newGenesisConfig))
-          btime <- realBlockchainTime tr slotDuration systemStart
-          withDB dbc dbTracer tr securityParam nodeConfig extLedgerState $ \idx cdb -> do
+          btime <- realBlockchainTime treg slotDuration systemStart
+          withDB dbc dbTracer treg securityParam nodeConfig extLedgerState $ \idx cdb -> do
             traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
-            Shelley.withVersions cdb nodeConfig nodeState btime $ \tr ctable iversions rversions -> do
-              let server = runShelleyServer (soLocalAddress      (bpoShelleyOptions bpo)) tr ctable rversions
-                  client = runShelleyClient (soProducerAddresses (bpoShelleyOptions bpo)) tr ctable iversions
+            Shelley.withVersions treg cdb nodeConfig nodeState btime $ \ctable iversions rversions -> do
+              let server = runShelleyServer (soLocalAddress      (bpoShelleyOptions bpo)) treg ctable rversions
+                  client = runShelleyClient (soProducerAddresses (bpoShelleyOptions bpo)) treg ctable iversions
                   byron  = case bpoByronOptions bpo of
                     Nothing -> pure ()
                     Just bopts -> runByron

@@ -21,7 +21,7 @@ import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
 import Ouroboros.Consensus.Util.Condense (Condense (..))
-import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry, withThreadRegistry)
+import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 
 import Ouroboros.Network.Block (decodePoint, encodePoint)
@@ -58,18 +58,19 @@ type ResponderVersions = Versions NodeToNodeVersion DictVersion (AnyResponderApp
 -- Must have `ByronGiven` because of the constraints on `nodeKernel`
 withVersions
   :: ( ByronGiven )
-  => ChainDB IO (Block ByronConfig)
+  => ThreadRegistry IO
+  -> ChainDB IO (Block ByronConfig)
   -> NodeConfig (BlockProtocol (Block ByronConfig))
   -> NodeState (BlockProtocol (Block ByronConfig))
   -> BlockchainTime IO
-  -> (ThreadRegistry IO -> ConnectionTable IO -> InitiatorVersions -> ResponderVersions -> IO t)
+  -> (ConnectionTable IO -> InitiatorVersions -> ResponderVersions -> IO t)
   -> IO t
-withVersions cdb conf state blockchainTime k = withThreadRegistry $ \tr -> do
+withVersions tr cdb conf state blockchainTime k = do
   ctable <- newConnectionTable
   let params = mkParams tr cdb conf state blockchainTime
   apps <- networkApps params
   let vs = versions apps
-  k tr ctable (initiatorNetworkApplication <$> vs) (responderNetworkApplication <$> vs)
+  k ctable (initiatorNetworkApplication <$> vs) (responderNetworkApplication <$> vs)
 
 -- | It's in `IO` because `nodeKernel` needs `IO`.
 networkApps

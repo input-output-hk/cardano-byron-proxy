@@ -15,7 +15,6 @@ import qualified System.Directory (createDirectoryIfMissing)
 import System.FilePath ((</>))
 
 import qualified Cardano.Chain.Slotting as Cardano (EpochSlots (..))
-import qualified Cardano.Crypto as Crypto (ProtocolMagicId)
 
 import           Ouroboros.Byron.Proxy.Block (Block, isEBB)
 import           Ouroboros.Byron.Proxy.Index.Types (Index)
@@ -52,7 +51,7 @@ data DBConfig = DBConfig
 --
 -- The directory at `dbFilePath` will be created if it does not exist.
 withDB
-  :: forall cfg t .
+  :: forall t .
      ( ByronGiven ) -- For HasHeader instances
   => DBConfig
   -> Tracer IO (ChainDB.TraceEvent (Block ByronConfig))
@@ -68,8 +67,6 @@ withDB dbOptions tracer tr securityParam nodeConfig extLedgerState k = do
   System.Directory.createDirectoryIfMissing True (dbFilePath dbOptions)
   let epochSlots :: Cardano.EpochSlots
       epochSlots = Reflection.given
-      pm :: Crypto.ProtocolMagicId
-      pm = Reflection.given
       epochSize = EpochSize $
         fromIntegral (Cardano.unEpochSlots epochSlots)
       fp = dbFilePath dbOptions

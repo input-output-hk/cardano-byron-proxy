@@ -31,7 +31,7 @@ import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), GenesisBlock,
                                          MainBlockHeader, headerHash)
 import qualified Pos.Infra.Diffusion.Types as CSL
 
-import Ouroboros.Byron.Proxy.Block (Block (..), ByronBlockOrEBB (..),
+import Ouroboros.Byron.Proxy.Block (Block, ByronBlockOrEBB (..),
          coerceHashToLegacy, unByronHeaderOrEBB, headerHash)
 import Ouroboros.Byron.Proxy.Main
 import Ouroboros.Consensus.Block (getHeader)
@@ -198,8 +198,8 @@ announce mHashOfLatest db bp = do
   -- better that way
   case unByronHeaderOrEBB tipHeader of
     Right hdr -> case CSL.decodeFull (Lazy.fromStrict (Cardano.headerAnnotation hdr)) of
-      Left txt -> error "announce: could not decode main header"
+      Left  _ -> error "announce: could not decode main header"
       Right (hdr' :: CSL.MainBlockHeader) -> announceChain bp hdr'
     -- We do not announce EBBs.
-    Left ebb  -> pure ()
+    Left  _   -> pure ()
   announce (Just hash) db bp
