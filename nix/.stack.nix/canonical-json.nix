@@ -55,7 +55,7 @@
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
-      url = "http://github.com/well-typed/canonical-json";
+      url = "https://github.com/well-typed/canonical-json";
       rev = "ddfe3593b80b5ceb88842bb7a6f2268df75d2c2f";
       sha256 = "02fzn1xskis1lc1pkz0j92v6ipd89ww0k2p3dvwpm3yap5dpnm7k";
       });
