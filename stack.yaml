@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/faf5ba333c7e6f1710a355d5af0abbaec696dfd1/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/8273fe5f00ac03b0c66ef3841c8e957139ee18f2/snapshot.yaml
 
 packages:
   - .
@@ -12,14 +12,14 @@ extra-deps:
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: d015414ab8a139173162e0cbce719f834d8b6e6c
+    commit: 565df9739781db7589c7220a9125ea46a615dd40
     subdirs:
       - binary
       - binary/test
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 29902b163eb3dad1d6aed1e3efc08ee6258fa9e7
+    commit: 4fab23bda24a119f4a4bc08f907caedde1d19b4f
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -27,7 +27,7 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: faf5ba333c7e6f1710a355d5af0abbaec696dfd1
+    commit: 8273fe5f00ac03b0c66ef3841c8e957139ee18f2
     subdirs:
       - .
       - test
@@ -39,7 +39,7 @@ extra-deps:
     commit: ec96c64c665b741c17b4e38f611315bae9b0b054
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: 18762847c23f01031f6d312f0005d05b06f7065e
+    commit: 7a0c8eabece1b07e70cdb65f01462a7e42c4e4c4
     subdirs:
       - ouroboros-consensus
       - ouroboros-network
@@ -47,6 +47,12 @@ extra-deps:
       - network-mux
       - typed-protocols
       - typed-protocols-cbor
+
+  - git: https://github.com/well-typed/cborg
+    commit: 992b730ca6fd9c1da191bfecb2b67cabf31b54ad
+
+  - git: https://github.com/well-typed/canonical-json
+    commit: ddfe3593b80b5ceb88842bb7a6f2268df75d2c2f
 
   - bimap-0.4.0
   - binary-0.8.7.0
