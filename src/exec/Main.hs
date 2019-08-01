@@ -33,7 +33,7 @@ import Data.Word (Word16)
 import qualified Network.Socket as Network
 import Numeric.Natural (Natural)
 import qualified Options.Applicative as Opt
-import System.FilePath (takeDirectory)
+import System.FilePath ((</>), takeDirectory)
 import System.IO.Error (userError)
 
 import qualified Cardano.BM.Data.Aggregated as Monitoring
@@ -411,9 +411,11 @@ runByron tracer byronOptions genesisConfig _ epochSlots idx db = do
 
 -- TODO move all of this legacy-to-new conversion stuff to one new module.
 
-convertStaticConfig :: CSL.StaticConfig -> Cardano.StaticConfig
-convertStaticConfig cslConfig = case cslConfig of
-  CSL.GCSrc fp hash -> Cardano.GCSrc fp (convertHash hash)
+-- | The `FilePath` will be prefixed to the genesis json filepath, in case of
+-- a `GCSrc`.
+convertStaticConfig :: FilePath -> CSL.StaticConfig -> Cardano.StaticConfig
+convertStaticConfig configDir cslConfig = case cslConfig of
+  CSL.GCSrc fp hash -> Cardano.GCSrc (configDir </> fp) (convertHash hash)
   CSL.GCSpec gspec  -> Cardano.GCSpec (convertGenesisSpec gspec)
 
 convertHash :: CSL.AbstractHash algo a -> Cardano.AbstractHash algo b
@@ -607,7 +609,7 @@ main = do
     -- to the new cardano-ledger style.
     yamlConfig <- CSL.parseYamlConfig (CSL.cfoFilePath confOpts) (CSL.cfoKey confOpts)
     let configDir = takeDirectory $ CSL.cfoFilePath confOpts
-    -- Old part
+    -- Old part.
     oldGenesisConfig <- CSL.mkConfigFromStaticConfig
       configDir
       (CSL.cfoSystemStart confOpts)
@@ -623,7 +625,10 @@ main = do
       (convertRequiresNetworkMagic (CSL.ccReqNetMagic yamlConfig))
       (fmap convertSystemStart (CSL.cfoSystemStart confOpts))
       (CSL.cfoSeed confOpts)
-      (convertStaticConfig (CSL.ccGenesis yamlConfig))
+      -- Careful to adjust the file path: CSL puts the configuration directory
+      -- part (`configDir`) in front of it, but cardano-ledger's variant does
+      -- not.
+      (convertStaticConfig configDir (CSL.ccGenesis yamlConfig))
     newGenesisConfig <- case outcome of
       Left confError -> throwIO (userError (show confError))
       Right it       -> pure it
