@@ -142,13 +142,14 @@ sqliteTip epochSlots conn = do
        hh <- case digestFromByteString hhBlob of
          Just hh -> pure (AbstractHash hh)
          Nothing -> throwIO $ InvalidHash hhBlob
-       slot :: Word64 <-
+       offsetInEpoch :: Word64 <-
          if slotInt == -1
-         then pure $ unEpochSlots epochSlots * epoch
+         then pure 0
          else if slotInt >= 0
          then pure $ fromIntegral slotInt
          else throwIO $ InvalidRelativeSlot hh slotInt
-       pure $ At $ Point.Block (SlotNo slot) hh
+       let slotNo = SlotNo $ unEpochSlots epochSlots * epoch + offsetInEpoch
+       pure $ At $ Point.Block slotNo hh
 
 sql_get_hash :: Query
 sql_get_hash =
