@@ -163,13 +163,13 @@ sqliteLookup epochSlots conn hh@(AbstractHash digest) = do
   case rows of
     [] -> pure Nothing
     ((epoch, slotInt) : _) -> do
-      slot :: Word64 <-
+      offsetInEpoch :: Word64 <-
         if slotInt == -1
-        then pure $ unEpochSlots epochSlots * epoch
+        then pure 0
         else if slotInt >= 0
         then pure $ fromIntegral slotInt
         else throwIO $ InvalidRelativeSlot hh slotInt
-      pure $ Just $ SlotNo slot
+      pure $ Just $ SlotNo $ unEpochSlots epochSlots * epoch + offsetInEpoch
 
 -- The ON CONFLICT DO NOTHING is essential. The DB into which this index points
 -- may fall behind the index, for instance because of an unclean shutdown in
@@ -177,8 +177,7 @@ sqliteLookup epochSlots conn hh@(AbstractHash digest) = do
 -- is still "correct" under our assumption of immutability (no forks).
 sql_insert :: Query
 sql_insert =
-  "INSERT INTO block_index VALUES (?, ?, ?)\
-  \  ON CONFLICT DO NOTHING;"
+  "INSERT OR ROLLBACK INTO block_index VALUES (?, ?, ?);"
 
 sqliteRollforward
   :: EpochSlots
