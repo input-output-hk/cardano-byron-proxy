@@ -89,8 +89,10 @@ import Ouroboros.Consensus.BlockchainTime (SlotLength (..), SystemStart (..), re
 import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import Ouroboros.Consensus.Util.Condense (condense)
 import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..))
 import Ouroboros.Consensus.Node.ProtocolInfo.Byron (protocolInfoByron)
+import qualified Ouroboros.Network.AnchoredFragment as AF
 import Ouroboros.Network.NodeToNode (withServer)
 import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry, withThreadRegistry)
 import Ouroboros.Network.Block (SlotNo (..), Point (..))
@@ -665,15 +667,18 @@ main = do
         let Tracer doConvertedTrace = Logging.convertTrace trace
             dbTracer :: Tracer IO (TraceEvent (Block ByronConfig))
             dbTracer = Tracer $ \trEvent -> case trEvent of
-              TraceAddBlockEvent (AddedBlockToVolDB point) -> case point of
-                Point Origin -> pure ()
-                Point (At (Point.Block (SlotNo slotno) _)) ->
-                  -- NB this is here because devops wanted an EKG metric on
-                  -- block count. FIXME should be done in a more sane way...
-                  let val = ("db", Monitoring.Info, Monitoring.LogValue "block count" (Monitoring.PureI (fromIntegral slotno)))
-                  in  doConvertedTrace val
+              -- TraceAddBlockEvent (AddedBlockToVolDB point) -> case point of
+              --   Point Origin -> pure ()
+              --   Point (At (Point.Block (SlotNo slotno) _)) ->
+              --     -- NB this is here because devops wanted an EKG metric on
+              --     -- block count. FIXME should be done in a more sane way...
+              --     let val = ("db", Monitoring.Info, Monitoring.LogValue "block count" (Monitoring.PureI (fromIntegral slotno)))
+              --     in  doConvertedTrace val
               TraceAddBlockEvent (AddBlockValidation it@(InvalidBlock _ _)) ->
                   let val = ("db", Monitoring.Error, Monitoring.LogMessage (fromString (show it)))
+                  in  doConvertedTrace val >> error "oops"
+              TraceAddBlockEvent (SwitchedToChain _ newChain) ->
+                  let val = ("db", Monitoring.Info, Monitoring.LogMessage (fromString $ "added block " <> condense (AF.headPoint newChain)))
                   in  doConvertedTrace val
               _ -> pure ()
         traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Opening database")

@@ -19,7 +19,7 @@ extra-deps:
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 4fab23bda24a119f4a4bc08f907caedde1d19b4f
+    commit: ecbd65ed4790f1a15965128b4a88a7656d194fbf
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -33,13 +33,13 @@ extra-deps:
       - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: 455c006e5d1a0c1cf3d31777df24752afcbaab10
+    commit: 33e4d04fafbfe094422a45203dda0900be109439
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: ec96c64c665b741c17b4e38f611315bae9b0b054
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: 7a0c8eabece1b07e70cdb65f01462a7e42c4e4c4
+    commit: 5a9bd9c8393a079d6f95ba66a50640135f8fdcf2
     subdirs:
       - ouroboros-consensus
       - ouroboros-network
@@ -47,9 +47,6 @@ extra-deps:
       - network-mux
       - typed-protocols
       - typed-protocols-cbor
-
-  - git: https://github.com/well-typed/cborg
-    commit: 992b730ca6fd9c1da191bfecb2b67cabf31b54ad
 
   - git: https://github.com/well-typed/canonical-json
     commit: ddfe3593b80b5ceb88842bb7a6f2268df75d2c2f
@@ -131,7 +128,7 @@ extra-deps:
   - lzma-clib-5.2.2
 
 ghc-options:
-  cardano-byron-proxy:     -Wall -Werror -Wcompat -fwarn-redundant-constraints -fwarn-incomplete-patterns -fwarn-unused-imports -Wincomplete-record-updates -Wincomplete-uni-patterns
+  cardano-byron-proxy:     -Wall -Wcompat -fwarn-redundant-constraints -fwarn-incomplete-patterns -fwarn-unused-imports -Wincomplete-record-updates -Wincomplete-uni-patterns
 
 nix:
   shell-file: nix/stack-shell.nix

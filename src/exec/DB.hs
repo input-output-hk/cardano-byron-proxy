@@ -109,7 +109,7 @@ withDB dbOptions tracer tr securityParam nodeConfig extLedgerState k = do
         , cdbHasFSVolDb = ioHasFS $ MountPoint (fp </> "volatile")
         , cdbHasFSLgrDB = ioHasFS $ MountPoint (fp </> "ledger")
 
-        , cdbValidation = ValidateMostRecentEpoch
+        , cdbValidation = ValidateAllEpochs
         , cdbBlocksPerFile = 21600 -- ?
         , cdbMemPolicy = defaultMemPolicy securityParam
         , cdbDiskPolicy = ledgerDiskPolicy
