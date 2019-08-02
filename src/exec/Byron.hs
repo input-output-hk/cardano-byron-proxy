@@ -11,9 +11,9 @@ module Byron
   , recodeBlockOrFail
   ) where
 
-import Control.Concurrent.STM (STM, atomically, retry)
+import Control.Concurrent.STM (STM, atomically, check, readTVar, registerDelay, retry)
 import Control.Exception (throwIO)
-import Control.Monad (forM_)
+import Control.Monad (forM_, when)
 import Control.Tracer (Tracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy (fromStrict)
 import Data.List.NonEmpty (NonEmpty)
@@ -100,17 +100,6 @@ download tracer genesisBlock epochSlots db bp k = getStdGen >>= mainLoop Nothing
           Nothing -> do
             traceWith tracer "Seeding database with genesis"
             genesisBlock' :: Block cfg <- recodeBlockOrFail epochSlots throwIO (Left genesisBlock)
-            let hh = headerHash (getHeader genesisBlock')
-                hh' = blockHash genesisBlock'
-            () <- case headerHash (getHeader genesisBlock') == blockHash genesisBlock' of
-              True  -> do
-                traceWith tracer $ mconcat
-                  [ "Hashes match "
-                  , Text.fromString (show hh)
-                  , " "
-                  , Text.fromString (show hh')
-                  ]
-              False -> error $ "mismatch " ++ show hh ++ " " ++ show hh'
             ChainDB.addBlock db genesisBlock'
             pure $ CSL.headerHash genesisBlock
           Just header -> pure $ coerceHashToLegacy (headerHash header)
@@ -173,30 +162,47 @@ recodeBlock epochSlots cslBlk = case Binary.decodeFullAnnotatedBytes "Block" dec
   cslBytes = CSL.serialize cslBlk
   decoder = Cardano.fromCBORABlockOrBoundary epochSlots
 
--- | Uses the `ChainDB` to announce the new tip-of-chain as promptly as
--- possible, whenever it should change.
+-- | Uses the `ChainDB` to announce the new tip-of-chain.
+-- At most one is announced every 1 second. Otherwise we'd see spamming of
+-- announcements when doing a big download. FIXME this still isn't ideal.
+-- Announce once per slot like in cardano-sl? Would need some way to know when
+-- a slot is starting.
+--
+-- In cardano-sl, a block is announced whenever it is received, verified, and
+-- stored... _unless_ in recovery mode! i.e. precisely when the new block is
+-- a continuation of the current chain.
+-- Do we wish to / need to stick to that style?
 announce
   :: ( ByronGiven, Typeable cfg ) -- Needed for HasHeader instance.
   => Maybe Cardano.HeaderHash -- ^ Of block most recently announced.
   -> ChainDB IO (Block cfg)
   -> ByronProxy
   -> IO x
-announce mHashOfLatest db bp = do
+announce mHashOfLast db bp = do
+  -- Wait until the current tip has changed from the last hash seen.
   (hash, tipHeader) <- atomically $ do
     fragment <- fmap AF.unanchorFragment (ChainDB.getCurrentChain db)
     case CF.head fragment of
       Nothing     -> retry
       Just header ->
-        if Just hash == mHashOfLatest
+        if Just hash == mHashOfLast
         then retry
         else pure (hash, header)
         where
         hash = headerHash header
-  -- Must decode the legacy header from the cardano-ledger header.
-  -- TODO alternatively, the type of `ByronProxy.announceChain` could change
-  -- to accept a `Header Block`, and it could deal with the recoding. Probably
-  -- better that way
-  case unByronHeaderOrEBB tipHeader of
+  timeout <- registerDelay 1000000 -- FIXME configurable?
+  -- After 1 second, if the tip has not changed, announce it.
+  shouldAnnounce <- atomically $ do
+    readTVar timeout >>= check
+    fragment <- fmap AF.unanchorFragment (ChainDB.getCurrentChain db)
+    case CF.head fragment of
+      Nothing      -> pure False
+      Just header' -> pure (headerHash header' == hash)
+  when shouldAnnounce $ case unByronHeaderOrEBB tipHeader of
+    -- Must decode the legacy header from the cardano-ledger header.
+    -- TODO alternatively, the type of `ByronProxy.announceChain` could change
+    -- to accept a `Header Block`, and it could deal with the recoding. Probably
+    -- better that way
     Right hdr -> case CSL.decodeFull (Lazy.fromStrict (Cardano.headerAnnotation hdr)) of
       Left  _ -> error "announce: could not decode main header"
       Right (hdr' :: CSL.MainBlockHeader) -> announceChain bp hdr'

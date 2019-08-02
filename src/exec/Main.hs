@@ -398,9 +398,7 @@ runByron tracer byronOptions genesisConfig _ epochSlots idx db = do
 
   byronClient genesisBlock bp = void $ concurrently
     (Byron.download textTracer genesisBlock epochSlots db bp k)
-    -- TODO turn announce back on, but don't do it for _every_ tip change.
-    -- Do it at most once every slot duration, maybe.
-    (Byron.announce Nothing                            db bp `seq` pure ())
+    (Byron.announce Nothing                            db bp)
     where
     k _ _ = pure ()
 
