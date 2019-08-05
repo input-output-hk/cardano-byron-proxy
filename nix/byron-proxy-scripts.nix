@@ -19,7 +19,7 @@ let
   mkProxyScript = environment: let
       envConfig = environments.${environment};
     in with config; pkgs.writeScript "byron-proxy-${environment}" ''
-    exec ${byronProxy}/bin/cardano-byron-proxy +RTS -T -RTS --database-path db-byron-proxy-${environment} --index-path index-byron-proxy-${environment} --configuration-file ${configuration}/lib/configuration.yaml --configuration-key ${envConfig.confKey} --topology ${mkTopology envConfig.relays} --logger-config ${loggingConfig} --local-addr '("${proxyHost}", "${toString proxyPort}")'
+    exec ${byronProxy}/bin/cardano-byron-proxy +RTS -T -RTS --database-path db-byron-proxy-${environment} --index-path index-byron-proxy-${environment} --configuration-file ${configuration}/lib/configuration.yaml --configuration-key ${envConfig.confKey} --topology ${mkTopology envConfig.relays} --logger-config ${loggingConfig} --local-addr [${proxyHost}]:${toString proxyPort}
   '';
   configuration = cardanoConfig;
 

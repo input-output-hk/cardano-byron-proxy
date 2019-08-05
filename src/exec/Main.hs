@@ -118,6 +118,31 @@ data Address = Address
   , serviceName :: !Network.ServiceName
   }
 
+-- | Simple address parser. Host goes in square brackets, followed by a colon
+-- and a non-empty service name
+--
+--   [127.0.0.1]:1024
+--
+parseAddress :: String -> Either String Address
+parseAddress str = case between '[' ']' str of
+    Nothing -> Left "Expected a host name between square brackets [hostname]"
+    Just (host, str') -> case str' of
+      ':' : service@(_ : _) -> Right $ Address host service
+      _                     -> Left "Expected a colon followed by service name [hostname]:service"
+  where
+    between :: Char -> Char -> String -> Maybe (String, String)
+    between _     _   [] = Nothing
+    between start end (s : ss) =
+      if start == s
+      then untilEnd end ss []
+      else Nothing
+    untilEnd :: Char -> String -> String -> Maybe (String, String)
+    untilEnd _   []       _   = Nothing
+    untilEnd end (s : ss) acc =
+      if end == s
+      then Just (reverse acc, ss)
+      else untilEnd end ss (s : acc)
+
 resolveAddress :: Address -> IO Network.AddrInfo
 resolveAddress addr = do
   addrInfos <- Network.getAddrInfo
@@ -192,22 +217,10 @@ cliParser = ByronProxyOptions
     <*> Opt.many (cliAddress "producer" "producer address")
 
   cliAddress :: String -> String -> Opt.Parser Address
-  cliAddress prefix help = fmap (uncurry Address) $ Opt.option Opt.auto $
+  cliAddress prefix help = Opt.option (Opt.eitherReader parseAddress) $
     Opt.long (dashconcat (prefix : ["addr"])) <>
     Opt.metavar "(HOSTNAME,SERVIVCENAME)" <>
     Opt.help help
-
-  {-
-  cliHostName prefix = Opt.strOption $
-    Opt.long (dashconcat (prefix ++ ["host"])) <>
-    Opt.metavar "HOST" <>
-    Opt.help "Host"
-
-  cliServiceName prefix = Opt.strOption $
-    Opt.long (dashconcat (prefix ++ ["port"])) <>
-    Opt.metavar "PORT" <>
-    Opt.help "Port"
-  -}
 
   cliByronOptions :: Opt.Parser (Maybe ByronOptions)
   cliByronOptions = Opt.optional $
