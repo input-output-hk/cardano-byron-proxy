@@ -10,6 +10,7 @@ import qualified Data.Reflection as Reflection (given)
 import Data.Void (Void)
 import Network.Socket (SockAddr)
 
+import Cardano.Binary (fromCBOR, toCBOR)
 import Cardano.Chain.Slotting (EpochSlots)
 -- ToCBOR/FromCBOR UTxOValidationError, for local tx submission codec.
 import Cardano.Chain.UTxO.Validation ()
