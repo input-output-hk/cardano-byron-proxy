@@ -42,13 +42,16 @@ data TraceEvent where
   deriving (Show)
 
 -- | Make an index from an SQLite connection (sqlite-simple).
--- Every `indexWrite` continuation runs in an SQLite transaction
--- (BEGIN TRANSACTION).
-index :: EpochSlots -> Tracer IO TraceEvent -> Connection -> Index IO (Header (Block cfg))
-index epochSlots tracer conn = Index
+index
+  :: EpochSlots
+  -> Tracer IO TraceEvent
+  -> Connection
+  -> Sql.Statement -- for insert
+  -> Index IO (Header (Block cfg))
+index epochSlots tracer conn insertStatement = Index
   { Index.lookup = sqliteLookup epochSlots conn
   , tip          = sqliteTip epochSlots conn
-  , rollforward  = sqliteRollforward epochSlots tracer conn
+  , rollforward  = sqliteRollforward epochSlots tracer insertStatement
   , rollbackward = sqliteRollbackward epochSlots tracer conn
   }
 
@@ -81,7 +84,10 @@ withIndex epochSlots tracer o fp k = Sql.withConnection fp $ \conn -> do
   -- FIXME study what the drawbacks are. Should be fine, since if writes
   -- are lost, the index can still be recovered.
   Sql.execute_ conn "PRAGMA main.synchronous = 0;"
-  k (index epochSlots tracer conn)
+  -- Since insert will probably be hammered, we'll use a prepared statement
+  -- for it.
+  Sql.withStatement conn sql_insert $ \insertStatement ->
+    k (index epochSlots tracer conn insertStatement)
 
 -- | Like withDB but uses file existence check to determine whether it's new
 -- or existing. If it exists, it's assumed to be an sqlite database file.
@@ -199,12 +205,22 @@ sql_insert =
 sqliteRollforward
   :: EpochSlots
   -> Tracer IO TraceEvent
-  -> Sql.Connection
+  -> Sql.Statement -- the insert prepared statement
   -> Header (Block cfg)
   -> IO ()
-sqliteRollforward epochSlots tracer conn hdr = do
+sqliteRollforward epochSlots tracer insertStatement hdr = do
   traceWith tracer (Rollforward point)
-  Sql.execute conn sql_insert (hashBytes, epoch, slot)
+  Sql.withBind insertStatement (hashBytes, epoch, slot) $ do
+    outcome <- Sql.nextRow insertStatement
+    case outcome of
+      Nothing -> pure ()
+      -- sqlite-simple has a problem with prepared statements that do not
+      -- return rows. We still have to choose a type with a FromRow instance,
+      -- even though we should not get any rows. `Only Word64` is chosen,
+      -- somewhat arbitrarily.
+      -- https://github.com/nurpax/sqlite-simple/issues/50
+      Just (Sql.Only (_ :: Word64)) ->
+        error "sqliteRollforward: row returned from insert"
 
   where
 
