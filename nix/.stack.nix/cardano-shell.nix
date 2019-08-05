@@ -4,7 +4,7 @@
     package = {
       specVersion = "1.10";
       identifier = { name = "cardano-shell"; version = "0.1.0.0"; };
-      license = "MIT";
+      license = "Apache-2.0";
       copyright = "2018 IOHK";
       maintainer = "operations@iohk.io";
       author = "IOHK";
@@ -37,7 +37,8 @@
           (hsPkgs.stm)
           (hsPkgs.text)
           (hsPkgs.transformers)
-          ];
+          (hsPkgs.generic-monoid)
+          ] ++ (pkgs.lib).optional (system.isWindows) (hsPkgs.Win32);
         };
       exes = {
         "cardano-shell-exe" = {
@@ -102,7 +103,7 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-shell";
-      rev = "92e6b42167d1399971df788b691423222722c2f6";
-      sha256 = "059m0hd1hjf96g9l1qzh7imawvgwc813l0xggwlb5n47cab2dvhd";
+      rev = "455c006e5d1a0c1cf3d31777df24752afcbaab10";
+      sha256 = "0y9s5f6fgpqk9qlxgznpddpb6fr42ppkrmpp1kxn7k3dqmydqk7z";
       });
     }

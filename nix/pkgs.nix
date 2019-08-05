@@ -9,6 +9,15 @@ let
   # our packages
   stack-pkgs = import ./.stack.nix;
 
+  src = pkgs.lib.cleanSourceWith {
+    src = ../.;
+    filter = name: type: let
+      baseName = baseNameOf (toString name);
+    in
+      (baseName != "db-byron-proxy-mainnet")
+      && (baseName != "index-byron-proxy-mainnet");
+  };
+
   # Build the packageset with module support.
   # We can essentially override anything in the modules
   # section.
@@ -29,6 +38,8 @@ let
       iohk-module
       {
         doHaddock = false;
+        enableLibraryProfiling = true;
+        enableExecutableProfiling = true;
       }
       {
         # Packages we wish to ignore version bounds of.
@@ -39,6 +50,8 @@ let
         packages.io-sim.configureFlags = [ "--ghc-option=-Werror" ];
         packages.io-sim-classes.configureFlags = [ "--ghc-option=-Werror" ];
         packages.prometheus.components.library.doExactConfig = true;
+        # filter the source
+        packages.cardano-byron-proxy.src = src;
       }
     ];
   };

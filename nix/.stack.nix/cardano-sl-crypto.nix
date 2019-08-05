@@ -3,7 +3,7 @@
     flags = {};
     package = {
       specVersion = "1.10";
-      identifier = { name = "cardano-sl-crypto"; version = "3.0.2"; };
+      identifier = { name = "cardano-sl-crypto"; version = "3.0.3"; };
       license = "MIT";
       copyright = "2016 IOHK";
       maintainer = "hi@serokell.io";
@@ -82,8 +82,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-sl";
-      rev = "95c03f565e6f1ab1b863bcfb13638333851e6c75";
-      sha256 = "1xb70dzc6lj9xrzw54afnrna6a3hl1v60jxz43958llkij8ixrn1";
+      rev = "4f8cbfc63a7c741108995469a08d70202dda3e0c";
+      sha256 = "08r1zd58yqxglmynkk35vdf45546rqnffxcf48spqb158g17pydk";
       });
     postUnpack = "sourceRoot+=/crypto; echo source root reset to \$sourceRoot";
     }

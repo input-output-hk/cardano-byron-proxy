@@ -3,10 +3,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 
 import Codec.SerialiseTerm (CodecCBORTerm (..))
-import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Except (runExceptT)
 import Control.Monad.Trans.Reader (runReaderT)
-import Control.Monad.Trans.Resource (ResourceT)
 import Control.Tracer (Tracer (..), contramap, traceWith)
 import qualified Data.Text.Lazy.Builder as Text (Builder, fromString)
 import qualified Options.Applicative as Opt
@@ -14,23 +12,22 @@ import qualified Options.Applicative as Opt
 import qualified Network.Socket as Socket
 
 import Cardano.BM.Data.Severity (Severity (Info))
-import qualified Cardano.Binary as Binary (unAnnotated)
 import Cardano.Chain.Block (ChainValidationState (..))
 import qualified Cardano.Chain.Block as Block
 import qualified Cardano.Chain.Genesis as Genesis
 import Cardano.Chain.ValidationMode (fromBlockValidationMode)
 import Cardano.Crypto (RequiresNetworkMagic(..), decodeAbstractHash)
 
+import Cardano.Shell.Configuration.Lib (finaliseCardanoConfiguration)
 import Cardano.Shell.Constants.Types (CardanoConfiguration (..), Core (..), Genesis (..))
 import Cardano.Shell.Presets (mainnetConfiguration)
 
 import qualified Ouroboros.Byron.Proxy.ChainSync.Client as Client
-import Ouroboros.Byron.Proxy.ChainSync.Types as ChainSync (Block)
+import Ouroboros.Byron.Proxy.Block (Block, unByronBlockOrEBB)
 
 import Ouroboros.Network.Socket
 import Ouroboros.Byron.Proxy.Network.Protocol
 
-import Orphans ()
 import qualified Logging
 
 -- | Assumes there will never be a roll back. Validates each block that
@@ -44,27 +41,27 @@ import qualified Logging
 clientFold
   :: Tracer IO Text.Builder
   -> Genesis.Config
-  -> (Block -> IO (Maybe t)) -- ^ Stop condition
+  -> (Block cfg -> IO (Maybe t)) -- ^ Stop condition
   -> ChainValidationState
-  -> Client.Fold (ResourceT IO) () -- Either ChainValidationError (t, ChainValidationState))
+  -> Client.Fold cfg IO () -- Either ChainValidationError (t, ChainValidationState))
 clientFold tracer genesisConfig stopCondition cvs = Client.Fold $ pure $ Client.Continue
   (\block _ -> Client.Fold $ do
-    lift $ traceWith tracer $ case Binary.unAnnotated block of
+    traceWith tracer $ case unByronBlockOrEBB block of
       Block.ABOBBlock    blk -> mconcat
         [ "Validating block\n"
         , Block.renderBlock (Genesis.configEpochSlots genesisConfig) (fmap (const ()) blk)
         ]
       Block.ABOBBoundary _   -> "Validating boundary block\n"
     let validationMode = fromBlockValidationMode Block.BlockValidation
-    outcome <- lift $ (`runReaderT` validationMode) $ runExceptT
-      (Block.updateChainBlockOrBoundary genesisConfig cvs (Binary.unAnnotated block))
+    outcome <- (`runReaderT` validationMode) $ runExceptT
+      (Block.updateChainBlockOrBoundary genesisConfig cvs (unByronBlockOrEBB block))
     case outcome of
       Left err   -> do
         let msg = mconcat ["Validation failed: ", Text.fromString (show err)]
-        lift $ traceWith tracer msg
+        traceWith tracer msg
         pure $ Client.Stop ()
       Right cvs' -> do
-        maybeStop <- lift $ stopCondition block
+        maybeStop <- stopCondition block
         case maybeStop of
           Just _ -> pure $ Client.Stop ()
           Nothing -> Client.runFold $ clientFold tracer genesisConfig stopCondition cvs'
@@ -130,22 +127,20 @@ main = do
   Logging.withLogging (loggerConfigPath opts) "validator" $ \trace_ -> do
     let trace = Logging.convertTrace' trace_
         -- Hard-code to mainnet configuration.
-        cc = mainnetConfiguration
+        Right cc = finaliseCardanoConfiguration mainnetConfiguration
         mainnetGenFilepath = case overrideGenesisJson opts of
           Nothing -> geSrc . coGenesis $ ccCore cc
           Just fp -> fp
         rnm = requiresNetworkMagic opts
     -- Copied from validate-mainnet in cardano-ledger.
-    let genHash = either (error . show) id $
-                          decodeAbstractHash
+    let (Right genHash) = decodeAbstractHash
                           . geGenesisHash
                           . coGenesis
                           . ccCore
                           $ cc
-    genesisConfig <- either (error . show) id <$>
+    Right genesisConfig <-
       runExceptT (Genesis.mkConfigFromFile rnm mainnetGenFilepath genHash)
-    cvs <- either (error . show) id <$>
-      runExceptT (Block.initialChainValidationState genesisConfig)
+    Right cvs <- runExceptT $ Block.initialChainValidationState genesisConfig
     genesisConfig `seq` cvs `seq` pure ()
     addrInfoLocal  : _ <- Socket.getAddrInfo
       (Just Socket.defaultHints)
@@ -156,13 +151,15 @@ main = do
       (Just (serverHost opts))
       (Just (serverPort opts))
     let epochSlots = Genesis.configEpochSlots genesisConfig
-        stopCondition :: Block -> IO (Maybe t)
+        stopCondition :: Block cfg -> IO (Maybe t)
         stopCondition = const (pure Nothing)
         tracer = contramap (\tbuilder -> ("", Info, tbuilder)) trace
         client  = Client.chainSyncClient (clientFold tracer genesisConfig stopCondition cvs)
     connectToNode
       encodeTerm
       decodeTerm
+      -- TODO: this should be some proper type rather than a tuple
+      (,)
       (initiatorVersions epochSlots client)
       (Just addrInfoLocal)
       addrInfoRemote

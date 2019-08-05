@@ -3,7 +3,7 @@
     flags = { optimize-gmp = true; };
     package = {
       specVersion = "1.10";
-      identifier = { name = "cborg"; version = "0.2.1.0"; };
+      identifier = { name = "cborg"; version = "0.2.2.0"; };
       license = "BSD-3-Clause";
       copyright = "2015-2017 Duncan Coutts,\n2015-2017 Well-Typed LLP,\n2015 IRIS Connect Ltd";
       maintainer = "duncan@community.haskell.org, ben@smart-cactus.org";
@@ -58,8 +58,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/well-typed/cborg";
-      rev = "80fbe0ee5e67a5622e2cb9eaa9d8594a2214322d";
-      sha256 = "1khd1v9yh6jdkcvzvknvhxpc1qvxvww0pp7c43w4hbvdyhs1q8wh";
+      rev = "992b730ca6fd9c1da191bfecb2b67cabf31b54ad";
+      sha256 = "1qi2wira1hjj5diikafg00x356ag99jrqcmxdvfzswg2m27plbnb";
       });
     postUnpack = "sourceRoot+=/cborg; echo source root reset to \$sourceRoot";
     }

@@ -15,18 +15,13 @@ extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Ouroboros.Byron.Proxy.DB
-                       Ouroboros.Byron.Proxy.Pool
-                       Ouroboros.Byron.Proxy.Main
-
-                       Ouroboros.Byron.Proxy.Index.Sqlite
-                       Ouroboros.Byron.Proxy.Index.Types
-
-                       Ouroboros.Byron.Proxy.ChainSync.Client
-                       Ouroboros.Byron.Proxy.ChainSync.Server
-                       Ouroboros.Byron.Proxy.ChainSync.Types
-
-                       Ouroboros.Byron.Proxy.Network.Protocol
+  exposed-modules:     Ouroboros.Byron.Proxy.Block,
+                       Ouroboros.Byron.Proxy.Pool,
+                       Ouroboros.Byron.Proxy.Main,
+                       Ouroboros.Byron.Proxy.Index.ChainDB,
+                       Ouroboros.Byron.Proxy.Index.Sqlite,
+                       Ouroboros.Byron.Proxy.Index.Types,
+                       Ouroboros.Byron.Proxy.Genesis.Convert
   -- other-modules:
   -- other-extensions:
   build-depends:       base,
@@ -48,6 +43,7 @@ library
                        contra-tracer,
                        cryptonite,
                        directory,
+                       filepath,
                        io-sim-classes,
                        iohk-monitoring,
                        lens,
@@ -61,9 +57,11 @@ library
                        stm,
                        tagged,
                        text,
+                       time,
                        transformers,
                        typed-protocols,
-                       unliftio-core
+                       unliftio-core,
+                       unordered-containers
   hs-source-dirs:      src/lib
   default-language:    Haskell2010
   ghc-options:         -Wall
@@ -80,25 +78,29 @@ executable cardano-byron-proxy
                        DB,
                        Logging,
                        Orphans,
-                       Shelley.Client,
-                       Shelley.Server
+                       Shelley
   -- other-extensions:
   build-depends:       base,
                        async,
                        cardano-byron-proxy,
                        bytestring,
                        cardano-binary,
+                       cardano-crypto-wrapper,
                        cardano-ledger,
                        cardano-sl,
                        cardano-sl-binary,
                        cardano-sl-chain,
+                       cardano-sl-core,
+                       cardano-sl-crypto,
                        cardano-sl-infra,
                        cardano-sl-util,
                        cborg,
                        containers,
                        contra-tracer,
+                       cryptonite,
                        directory,
                        exceptions,
+                       filepath,
                        iohk-monitoring,
                        io-sim-classes,
                        lens,
@@ -107,48 +109,15 @@ executable cardano-byron-proxy
                        ouroboros-consensus,
                        ouroboros-network,
                        random,
+                       reflection,
                        resourcet,
+                       serialise,
                        stm,
                        text,
                        time,
                        transformers,
-                       typed-protocols
-  hs-source-dirs:      src/exec
-  default-language:    Haskell2010
-  -- -threaded is needed or else the diffusion layer will crash, due to a use
-  -- of registerDelay
-  ghc-options:         -threaded
-                       -Wall
-                       -Wcompat
-                       -fwarn-redundant-constraints
-                       -fwarn-incomplete-patterns
-                       -fwarn-unused-imports
-                       -Wincomplete-record-updates
-                       -Wincomplete-uni-patterns
-
-executable validator
-  main-is:             Validator.hs
-  other-modules:       Logging
-                       Orphans
-  -- other-extensions:
-  build-depends:       base,
-                       cardano-byron-proxy,
-                       cardano-binary,
-                       cardano-crypto-wrapper,
-                       cardano-ledger,
-                       cardano-shell,
-                       contra-tracer,
-                       exceptions,
-                       io-sim-classes,
-                       iohk-monitoring,
-                       network,
-                       optparse-applicative,
-                       ouroboros-network,
-                       resourcet,
-                       text,
-                       time,
-                       transformers,
-                       typed-protocols
+                       typed-protocols,
+                       unordered-containers
   hs-source-dirs:      src/exec
   default-language:    Haskell2010
   -- -threaded is needed or else the diffusion layer will crash, due to a use

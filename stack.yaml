@@ -1,9 +1,10 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/faf5ba333c7e6f1710a355d5af0abbaec696dfd1/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/8273fe5f00ac03b0c66ef3841c8e957139ee18f2/snapshot.yaml
 
 packages:
   - .
 
 extra-deps:
+
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
     commit: bd31cd2f3922010ddb76bb869f29c4e63bb8001b
     subdirs:
@@ -11,14 +12,14 @@ extra-deps:
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 6b808ad5506cb097cdf5832e1cd5cad0c83c58d6
+    commit: 565df9739781db7589c7220a9125ea46a615dd40
     subdirs:
       - binary
       - binary/test
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: b81e722c28ed7d65d93c70b43ea744afd95ea1c3
+    commit: 7d6cc5d4fd1ce1ca8412b5b68c2ac8fd9b845645
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -26,26 +27,32 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: faf5ba333c7e6f1710a355d5af0abbaec696dfd1
+    commit: 8273fe5f00ac03b0c66ef3841c8e957139ee18f2
     subdirs:
       - .
       - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: 92e6b42167d1399971df788b691423222722c2f6
+    commit: 455c006e5d1a0c1cf3d31777df24752afcbaab10
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: ec96c64c665b741c17b4e38f611315bae9b0b054
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: f132a47c7d8711cc2c0457c62509fa1dbcb9347c
+    commit: 61a69d7310cc360df788d43814ee40729eaa9340
     subdirs:
-      - io-sim-classes
-      - network-mux
       - ouroboros-consensus
       - ouroboros-network
+      - io-sim-classes
+      - network-mux
       - typed-protocols
       - typed-protocols-cbor
+
+  - git: https://github.com/well-typed/cborg
+    commit: 992b730ca6fd9c1da191bfecb2b67cabf31b54ad
+
+  - git: https://github.com/well-typed/canonical-json
+    commit: ddfe3593b80b5ceb88842bb7a6f2268df75d2c2f
 
   - bimap-0.4.0
   - binary-0.8.7.0
@@ -65,7 +72,7 @@ extra-deps:
 
   # The parts of cardano-sl that are needed for the byron proxy.
   - git: https://github.com/input-output-hk/cardano-sl
-    commit: 95c03f565e6f1ab1b863bcfb13638333851e6c75
+    commit: 4f8cbfc63a7c741108995469a08d70202dda3e0c
     subdirs:
       - lib
       - binary

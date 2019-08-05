@@ -4,8 +4,8 @@
     package = {
       specVersion = "1.10";
       identifier = { name = "ouroboros-network"; version = "0.1.0.0"; };
-      license = "MIT";
-      copyright = "2018 IOHK";
+      license = "Apache-2.0";
+      copyright = "2019 Input Output (Hong Kong) Ltd.";
       maintainer = "";
       author = "Alexander Vieth, Marcin Szamotulski, Duncan Coutts";
       homepage = "";
@@ -26,9 +26,12 @@
           (hsPkgs.async)
           (hsPkgs.binary)
           (hsPkgs.bytestring)
+          (hsPkgs.cardano-binary)
           (hsPkgs.cborg)
           (hsPkgs.containers)
+          (hsPkgs.dns)
           (hsPkgs.fingertree)
+          (hsPkgs.iproute)
           (hsPkgs.network)
           (hsPkgs.serialise)
           (hsPkgs.stm)
@@ -41,21 +44,21 @@
         "demo-chain-sync" = {
           depends = [
             (hsPkgs.base)
-            (hsPkgs.directory)
-            (hsPkgs.network-mux)
-            (hsPkgs.ouroboros-network)
-            (hsPkgs.typed-protocols)
-            (hsPkgs.typed-protocols-cbor)
             (hsPkgs.async)
             (hsPkgs.bytestring)
             (hsPkgs.containers)
             (hsPkgs.contra-tracer)
+            (hsPkgs.directory)
+            (hsPkgs.network-mux)
             (hsPkgs.network)
+            (hsPkgs.ouroboros-network)
+            (hsPkgs.QuickCheck)
             (hsPkgs.random)
             (hsPkgs.serialise)
             (hsPkgs.splitmix)
             (hsPkgs.stm)
-            (hsPkgs.QuickCheck)
+            (hsPkgs.typed-protocols-cbor)
+            (hsPkgs.typed-protocols)
             ];
           };
         };
@@ -63,51 +66,55 @@
         "tests" = {
           depends = [
             (hsPkgs.base)
-            (hsPkgs.typed-protocols)
-            (hsPkgs.typed-protocols-cbor)
-            (hsPkgs.io-sim-classes)
-            (hsPkgs.io-sim)
-            (hsPkgs.network-mux)
-            (hsPkgs.ouroboros-network-testing)
-            (hsPkgs.contra-tracer)
             (hsPkgs.array)
             (hsPkgs.async)
             (hsPkgs.binary)
             (hsPkgs.bytestring)
+            (hsPkgs.cardano-binary)
             (hsPkgs.cborg)
             (hsPkgs.containers)
+            (hsPkgs.contra-tracer)
             (hsPkgs.directory)
+            (hsPkgs.dns)
             (hsPkgs.fingertree)
             (hsPkgs.hashable)
+            (hsPkgs.io-sim)
+            (hsPkgs.io-sim-classes)
+            (hsPkgs.iproute)
             (hsPkgs.mtl)
+            (hsPkgs.network-mux)
             (hsPkgs.network)
+            (hsPkgs.ouroboros-network-testing)
             (hsPkgs.pipes)
             (hsPkgs.process)
             (hsPkgs.QuickCheck)
-            (hsPkgs.splitmix)
             (hsPkgs.serialise)
+            (hsPkgs.splitmix)
             (hsPkgs.stm)
-            (hsPkgs.tasty)
-            (hsPkgs.tasty-quickcheck)
             (hsPkgs.tasty-hunit)
+            (hsPkgs.tasty-quickcheck)
+            (hsPkgs.tasty)
             (hsPkgs.text)
             (hsPkgs.time)
+            (hsPkgs.typed-protocols-cbor)
+            (hsPkgs.typed-protocols)
             ];
           };
         "cddl" = {
           depends = [
             (hsPkgs.base)
             (hsPkgs.bytestring)
+            (hsPkgs.cardano-binary)
             (hsPkgs.cborg)
             (hsPkgs.containers)
             (hsPkgs.fingertree)
             (hsPkgs.hashable)
+            (hsPkgs.io-sim-classes)
             (hsPkgs.process-extras)
             (hsPkgs.serialise)
             (hsPkgs.text)
-            (hsPkgs.io-sim-classes)
-            (hsPkgs.typed-protocols)
             (hsPkgs.typed-protocols-cbor)
+            (hsPkgs.typed-protocols)
             ];
           };
         };
@@ -115,8 +122,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/ouroboros-network";
-      rev = "f132a47c7d8711cc2c0457c62509fa1dbcb9347c";
-      sha256 = "1vp0m4zhv93z7x4vwaj5izp13dzx5s44wa6q0dpkq0l8x73pi47x";
+      rev = "61a69d7310cc360df788d43814ee40729eaa9340";
+      sha256 = "0f2slwaq7yvq1xs3f4nwkzrm0fyn8pnh8qgan353ib2bnj2iy1y6";
       });
     postUnpack = "sourceRoot+=/ouroboros-network; echo source root reset to \$sourceRoot";
     }
