@@ -508,9 +508,8 @@ convertFakeAvvmOptions fao = Cardano.FakeAvvmOptions
 convertScriptVersion :: CSL.ScriptVersion -> Word16
 convertScriptVersion = id
 
--- Input is assumed to be in milliseconds
-convertSlotDuration :: Integer -> NominalDiffTime
-convertSlotDuration ms = fromIntegral (ms `div` 1000)
+convertSlotDuration :: Integer -> Natural
+convertSlotDuration = fromIntegral
 
 convertCoin :: CSL.Coin -> Cardano.Lovelace
 convertCoin = either (error . show) id . Cardano.mkLovelace . CSL.getCoin
@@ -675,7 +674,7 @@ main = do
                   in  doConvertedTrace val
               TraceAddBlockEvent (AddBlockValidation it@(InvalidBlock _ _)) ->
                   let val = ("db", Monitoring.Error, Monitoring.LogMessage (fromString (show it)))
-                  in  doConvertedTrace val
+                  in  doConvertedTrace val >> error ("oops: " ++ show it)
               _ -> pure ()
             indexTracer :: Tracer IO Index.TraceEvent
             indexTracer = Tracer $ \trEvent ->
@@ -701,7 +700,8 @@ main = do
               nodeConfig = pInfoConfig protocolInfo
               nodeState = pInfoInitState protocolInfo
               extLedgerState = pInfoInitLedger protocolInfo
-              slotDuration = SlotLength (Cardano.ppSlotDuration (Cardano.gdProtocolParameters (Cardano.configGenesisData newGenesisConfig)))
+              slotMs = Cardano.ppSlotDuration (Cardano.gdProtocolParameters (Cardano.configGenesisData newGenesisConfig))
+              slotDuration = SlotLength (fromRational (toRational slotMs / 1000))
               systemStart = SystemStart (Cardano.gdStartTime (Cardano.configGenesisData newGenesisConfig))
           btime <- realBlockchainTime treg slotDuration systemStart
           withDB dbc dbTracer indexTracer treg securityParam nodeConfig extLedgerState $ \idx cdb -> do
