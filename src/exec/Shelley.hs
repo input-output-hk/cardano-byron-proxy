@@ -5,13 +5,11 @@
 module Shelley where
 
 import qualified Codec.CBOR.Read as CBOR (DeserialiseFailure)
-import qualified Codec.Serialise as Serialise (decode, encode)
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.Reflection as Reflection (given)
 import Data.Void (Void)
 import Network.Socket (SockAddr)
 
-import Cardano.Binary (fromCBOR, toCBOR)
 import Cardano.Chain.Slotting (EpochSlots)
 import Crypto.Random (drgNew)
 

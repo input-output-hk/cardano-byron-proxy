@@ -34,9 +34,7 @@ import qualified Pos.Infra.Diffusion.Types as CSL
 import Ouroboros.Byron.Proxy.Block (Block, ByronBlockOrEBB (..),
          coerceHashToLegacy, unByronHeaderOrEBB, headerHash)
 import Ouroboros.Byron.Proxy.Main
-import Ouroboros.Consensus.Block (getHeader)
 import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
-import Ouroboros.Network.Block (blockHash)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.ChainFragment as CF
 import Ouroboros.Storage.ChainDB.API (ChainDB)
@@ -47,9 +45,7 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 --
 -- No exception handling is done.
 download
-  :: forall cfg x .
-     ( ByronGiven, Typeable cfg )
-  => Tracer IO Text.Builder
+  :: Tracer IO Text.Builder
   -> CSL.GenesisBlock -- ^ For use as checkpoint when DB is empty. Also will
                       -- be put into an empty DB.
                       -- Sadly, old Byron net API doesn't give any meaning to an
