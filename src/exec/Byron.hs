@@ -12,7 +12,7 @@ module Byron
   ) where
 
 import Control.Concurrent.STM (STM, atomically, check, readTVar, registerDelay, retry)
-import Control.Exception (throwIO)
+import Control.Exception (IOException, catch, throwIO)
 import Control.Monad (forM_, when)
 import Control.Tracer (Tracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy (fromStrict)
@@ -108,12 +108,15 @@ download tracer genesisBlock epochSlots db bp k = getStdGen >>= mainLoop Nothing
           , " from "
           , Text.fromString (show peer)
           ]
+        -- Try to download the chain, but do not die in case of IOExceptions.
         _ <- downloadChain
                bp
                peer
                (CSL.headerHash (btTip bt))
                [tipHash]
                streamer
+          `catch`
+          exceptionHandler
         mainLoop (Just bt) rndGen'
 
   -- If it ends at an EBB, the EBB will _not_ be written. The tip will be the
@@ -134,6 +137,10 @@ download tracer genesisBlock epochSlots db bp k = getStdGen >>= mainLoop Nothing
         pure streamer
     , CSL.streamBlocksDone = pure ()
     }
+
+  -- No need to trace it; cardano-sl libraries will do that.
+  exceptionHandler :: IOException -> IO (Maybe ())
+  exceptionHandler _ = pure Nothing
 
   pickRandom :: StdGen -> NonEmpty t -> (t, StdGen)
   pickRandom rndGen ne =
