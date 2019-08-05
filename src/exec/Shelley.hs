@@ -11,6 +11,8 @@ import Data.Void (Void)
 import Network.Socket (SockAddr)
 
 import Cardano.Chain.Slotting (EpochSlots)
+-- ToCBOR/FromCBOR UTxOValidationError, for local tx submission codec.
+import Cardano.Chain.UTxO.Validation ()
 import Crypto.Random (drgNew)
 
 import Ouroboros.Byron.Proxy.Block (Block)
@@ -120,11 +122,8 @@ codecs = ProtocolCodecs
   , pcLocalTxSubmissionCodec = codecLocalTxSubmission
       nodeEncodeGenTx
       nodeDecodeGenTx
-      -- There is at the moment no codec for UTxOValidationError
-      -- 8d8d45ae7c98a1e9ebe2067da3a7f3500d8f2e94 in ouroboros-network
-      -- changed from Strnig to UTxOValidationError and this broke things.
-      (error "local tx submission reject encode")
-      (error "local tx submission reject decode")
+      toCBOR
+      fromCBOR
   }
   where
   epochSlots :: EpochSlots
