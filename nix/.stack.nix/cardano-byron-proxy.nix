@@ -36,6 +36,7 @@
           (hsPkgs.contra-tracer)
           (hsPkgs.cryptonite)
           (hsPkgs.directory)
+          (hsPkgs.filepath)
           (hsPkgs.io-sim-classes)
           (hsPkgs.iohk-monitoring)
           (hsPkgs.lens)
@@ -49,9 +50,11 @@
           (hsPkgs.stm)
           (hsPkgs.tagged)
           (hsPkgs.text)
+          (hsPkgs.time)
           (hsPkgs.transformers)
           (hsPkgs.typed-protocols)
           (hsPkgs.unliftio-core)
+          (hsPkgs.unordered-containers)
           ];
         };
       exes = {
