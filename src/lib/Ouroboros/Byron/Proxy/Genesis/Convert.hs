@@ -32,7 +32,6 @@ import qualified Cardano.Chain.Update as Cardano
 import qualified Cardano.Crypto as Cardano
 
 import qualified Pos.Chain.Delegation as CSL
-import qualified Pos.Chain.Genesis as CSL.Genesis (Config)
 import qualified Pos.Chain.Genesis as CSL
 import qualified Pos.Chain.Update as CSL
 import qualified Pos.Core.Common as CSL
