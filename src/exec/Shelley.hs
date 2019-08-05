@@ -5,6 +5,7 @@
 module Shelley where
 
 import qualified Codec.CBOR.Read as CBOR (DeserialiseFailure)
+import qualified Codec.Serialise as Serialise (decode, encode)
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.Reflection as Reflection (given)
 import Data.Void (Void)
