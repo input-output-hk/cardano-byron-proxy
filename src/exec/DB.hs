@@ -55,13 +55,14 @@ withDB
      ( ByronGiven ) -- For HasHeader instances
   => DBConfig
   -> Tracer IO (ChainDB.TraceEvent (Block ByronConfig))
+  -> Tracer IO Sqlite.TraceEvent
   -> ThreadRegistry IO
   -> SecurityParam
   -> NodeConfig (BlockProtocol (Block ByronConfig))
   -> ExtLedgerState (Block ByronConfig)
   -> (Index IO (Header (Block ByronConfig)) -> ChainDB IO (Block ByronConfig) -> IO t)
   -> IO t
-withDB dbOptions tracer tr securityParam nodeConfig extLedgerState k = do
+withDB dbOptions dbTracer indexTracer tr securityParam nodeConfig extLedgerState k = do
   -- The ChainDB/Storage layer will not create a directory for us, we have
   -- to ensure it exists.
   System.Directory.createDirectoryIfMissing True (dbFilePath dbOptions)
@@ -119,10 +120,10 @@ withDB dbOptions tracer tr securityParam nodeConfig extLedgerState k = do
         , cdbIsEBB = isEBB
         , cdbGenesis = pure extLedgerState
 
-        , cdbTracer = tracer
+        , cdbTracer = dbTracer
         , cdbThreadRegistry = tr
         , cdbGcDelay = secondsToDiffTime 20
         }
   bracket (ChainDB.openDB chainDBArgs) ChainDB.closeDB $ \cdb ->
-    Sqlite.withIndexAuto epochSlots (indexFilePath dbOptions) $ \idx ->
+    Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx ->
       Index.trackChainDB idx cdb $ k idx cdb

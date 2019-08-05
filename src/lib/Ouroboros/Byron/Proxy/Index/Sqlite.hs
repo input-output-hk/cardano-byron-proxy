@@ -9,9 +9,11 @@ module Ouroboros.Byron.Proxy.Index.Sqlite
   ( withIndex
   , withIndexAuto
   , index
+  , TraceEvent (..)
   ) where
 
 import Control.Exception (Exception, throwIO)
+import Control.Tracer (Tracer, traceWith)
 import Crypto.Hash (digestFromByteString)
 import Data.ByteString (ByteString)
 import Data.ByteArray (convert)
@@ -34,15 +36,20 @@ import Ouroboros.Byron.Proxy.Block (Block, Header, headerHash, unByronHeaderOrEB
 import Ouroboros.Byron.Proxy.Index.Types (Index (..))
 import qualified Ouroboros.Byron.Proxy.Index.Types as Index
 
+data TraceEvent where
+  Rollback    :: WithOrigin (Point.Block SlotNo HeaderHash) -> TraceEvent
+  Rollforward :: Point.Block SlotNo HeaderHash              -> TraceEvent
+  deriving (Show)
+
 -- | Make an index from an SQLite connection (sqlite-simple).
 -- Every `indexWrite` continuation runs in an SQLite transaction
 -- (BEGIN TRANSACTION).
-index :: EpochSlots -> Connection -> Index IO (Header (Block cfg))
-index epochSlots conn = Index
+index :: EpochSlots -> Tracer IO TraceEvent -> Connection -> Index IO (Header (Block cfg))
+index epochSlots tracer conn = Index
   { Index.lookup = sqliteLookup epochSlots conn
   , tip          = sqliteTip epochSlots conn
-  , rollforward  = sqliteRollforward epochSlots conn
-  , rollbackward = sqliteRollbackward epochSlots conn
+  , rollforward  = sqliteRollforward epochSlots tracer conn
+  , rollbackward = sqliteRollbackward epochSlots tracer conn
   }
 
 -- | Open a new or existing SQLite database. If new, it will set up the schema.
@@ -57,8 +64,14 @@ data OpenDB where
 
 -- | Create and use an sqlite connection to back an index in a bracket style.
 -- Sets the sqlite main.synchronous pragma to 0 for faster writes.
-withIndex :: EpochSlots -> OpenDB -> FilePath -> (Index IO (Header (Block cfg)) -> IO t) -> IO t
-withIndex epochSlots o fp k = Sql.withConnection fp $ \conn -> do
+withIndex
+  :: EpochSlots
+  -> Tracer IO TraceEvent
+  -> OpenDB
+  -> FilePath
+  -> (Index IO (Header (Block cfg)) -> IO t)
+  -> IO t
+withIndex epochSlots tracer o fp k = Sql.withConnection fp $ \conn -> do
   case o of
     New      -> Sql.withTransaction conn $ do
       createTable conn
@@ -68,14 +81,19 @@ withIndex epochSlots o fp k = Sql.withConnection fp $ \conn -> do
   -- FIXME study what the drawbacks are. Should be fine, since if writes
   -- are lost, the index can still be recovered.
   Sql.execute_ conn "PRAGMA main.synchronous = 0;"
-  k (index epochSlots conn)
+  k (index epochSlots tracer conn)
 
 -- | Like withDB but uses file existence check to determine whether it's new
 -- or existing. If it exists, it's assumed to be an sqlite database file.
-withIndexAuto :: EpochSlots -> FilePath -> (Index IO (Header (Block cfg)) -> IO t) -> IO t
-withIndexAuto epochSlots fp k = doesFileExist fp >>= \b -> case b of
-  True  -> withIndex epochSlots Existing fp k
-  False -> withIndex epochSlots New      fp k
+withIndexAuto
+  :: EpochSlots
+  -> Tracer IO TraceEvent
+  -> FilePath
+  -> (Index IO (Header (Block cfg)) -> IO t)
+  -> IO t
+withIndexAuto epochSlots tracer fp k = doesFileExist fp >>= \b -> case b of
+  True  -> withIndex epochSlots tracer Existing fp k
+  False -> withIndex epochSlots tracer New      fp k
 
 data IndexInternallyInconsistent where
   -- | The `Int` is less than -1
@@ -172,27 +190,35 @@ sqliteLookup epochSlots conn hh@(AbstractHash digest) = do
         else throwIO $ InvalidRelativeSlot hh slotInt
       pure $ Just $ SlotNo $ unEpochSlots epochSlots * epoch + offsetInEpoch
 
--- The ON CONFLICT DO NOTHING is essential. The DB into which this index points
--- may fall behind the index, for instance because of an unclean shutdown in
--- which some of the block data was not sync'd to disk. In that case, the index
--- is still "correct" under our assumption of immutability (no forks).
+-- | Note that there is a UNIQUE constraint. This will fail if a duplicate
+-- entry is inserted.
 sql_insert :: Query
 sql_insert =
   "INSERT OR ROLLBACK INTO block_index VALUES (?, ?, ?);"
 
 sqliteRollforward
   :: EpochSlots
+  -> Tracer IO TraceEvent
   -> Sql.Connection
   -> Header (Block cfg)
   -> IO ()
-sqliteRollforward epochSlots conn hdr =
+sqliteRollforward epochSlots tracer conn hdr = do
+  traceWith tracer (Rollforward point)
   Sql.execute conn sql_insert (hashBytes, epoch, slot)
+
   where
 
-  AbstractHash digest = headerHash hdr
+  point = Point.Block slotNo hh
+
+  hh@(AbstractHash digest) = headerHash hdr
 
   hashBytes :: ByteString
   hashBytes = convert digest
+
+  slotNo :: SlotNo
+  slotNo = case unByronHeaderOrEBB hdr of
+    Left  bvd  -> SlotNo $ Cardano.boundaryEpoch bvd * unEpochSlots epochSlots
+    Right hdr' -> SlotNo $ unSlotNumber (Binary.unAnnotated (Cardano.aHeaderSlot hdr'))
 
   epoch, slot :: Int
   (epoch, slot) = case unByronHeaderOrEBB hdr of
@@ -215,36 +241,43 @@ sql_delete_from =
 -- | Roll backward to a point, deleting every entry for a block strictly
 -- greater than the slot at that point. If the point is not in the database,
 -- an exception is thrown (TODO).
-sqliteRollbackward :: EpochSlots -> Sql.Connection -> WithOrigin (Point.Block SlotNo HeaderHash) -> IO ()
-sqliteRollbackward epochSlots conn point = case point of
-  -- Rolling back to origin is simple: delete everything.
-  Origin    -> Sql.execute_ conn sql_delete
-  -- Within a transaction, look up the hash for the point, then use its
-  -- relative slot to decide what to delete. This ensures that when rolling
-  -- back to a relative slot 0 block, we don't mistakenly delete the EBB.
-  At bpoint -> Sql.withTransaction conn $ do
-    let hh@(AbstractHash digest) = blockPointHash bpoint
-        expectedEpoch, expectedSlot :: Int
-        (expectedEpoch, expectedSlot) =
-          fromIntegral (unSlotNo (blockPointSlot bpoint))
-          `quotRem`
-          fromIntegral (unEpochSlots epochSlots)
-    rows :: [(Word64, Int)]
-      <- Sql.query conn sql_get_hash (Sql.Only (convert digest :: ByteString))
-    case rows of
-      -- TODO exception?
-      [] -> pure ()
-      -- Check that the epoch and slot match what's expected, and then
-      -- delete all rows greater than them
-      ((epoch, slotInt) : _) -> do
-        let matchesExpectedEpoch = epoch == fromIntegral expectedEpoch
-        matchesExpectedSlot <-
-          if slotInt == -1
-          then pure (expectedSlot == 0)
-          else if slotInt >= 0
-          then pure (expectedSlot == slotInt)
-          else throwIO $ InvalidRelativeSlot hh slotInt
-        if matchesExpectedSlot && matchesExpectedEpoch
-        then Sql.execute conn sql_delete_from (epoch, epoch, slotInt)
+sqliteRollbackward
+  :: EpochSlots
+  -> Tracer IO TraceEvent
+  -> Sql.Connection
+  -> WithOrigin (Point.Block SlotNo HeaderHash)
+  -> IO ()
+sqliteRollbackward epochSlots tracer conn point = do
+  traceWith tracer (Rollback point)
+  case point of
+    -- Rolling back to origin is simple: delete everything.
+    Origin    -> Sql.execute_ conn sql_delete
+    -- Within a transaction, look up the hash for the point, then use its
+    -- relative slot to decide what to delete. This ensures that when rolling
+    -- back to a relative slot 0 block, we don't mistakenly delete the EBB.
+    At bpoint -> Sql.withTransaction conn $ do
+      let hh@(AbstractHash digest) = blockPointHash bpoint
+          expectedEpoch, expectedSlot :: Int
+          (expectedEpoch, expectedSlot) =
+            fromIntegral (unSlotNo (blockPointSlot bpoint))
+            `quotRem`
+            fromIntegral (unEpochSlots epochSlots)
+      rows :: [(Word64, Int)]
+        <- Sql.query conn sql_get_hash (Sql.Only (convert digest :: ByteString))
+      case rows of
         -- TODO exception?
-        else pure ()
+        [] -> pure ()
+        -- Check that the epoch and slot match what's expected, and then
+        -- delete all rows greater than them
+        ((epoch, slotInt) : _) -> do
+          let matchesExpectedEpoch = epoch == fromIntegral expectedEpoch
+          matchesExpectedSlot <-
+            if slotInt == -1
+            then pure (expectedSlot == 0)
+            else if slotInt >= 0
+            then pure (expectedSlot == slotInt)
+            else throwIO $ InvalidRelativeSlot hh slotInt
+          if matchesExpectedSlot && matchesExpectedEpoch
+          then Sql.execute conn sql_delete_from (epoch, epoch, slotInt)
+          -- TODO exception?
+          else pure ()

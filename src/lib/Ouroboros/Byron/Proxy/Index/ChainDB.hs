@@ -17,20 +17,38 @@ import Ouroboros.Storage.ChainDB.API (ChainDB, Reader)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 -- | Reapaetedly take the reader instruction and update the index accordingly.
-trackReader
+trackReaderBlocking
   :: ( Monad m )
   => Index m (Header blk)
   -> Reader m blk (Header blk)
   -> m x
-trackReader idx reader = do
+trackReaderBlocking idx reader = do
   instruction <- ChainDB.readerInstructionBlocking reader
   case instruction of
     AddBlock blk -> do
       Index.rollforward idx blk
-      trackReader idx reader
+      trackReaderBlocking idx reader
     RollBack pnt -> do
       Index.rollbackward idx (getPoint pnt)
+      trackReaderBlocking idx reader
+
+-- | Do reader instructions to update the index, until there is no more
+-- instruction.
+trackReader
+  :: ( Monad m )
+  => Index m (Header blk)
+  -> Reader m blk (Header blk)
+  -> m ()
+trackReader idx reader = do
+  mInstruction <- ChainDB.readerInstruction reader
+  case mInstruction of
+    Just (AddBlock blk) -> do
+      Index.rollforward idx blk
       trackReader idx reader
+    Just (RollBack pnt) -> do
+      Index.rollbackward idx (getPoint pnt)
+      trackReader idx reader
+    Nothing -> pure ()
 
 -- | Have an Index track a ChainDB using its Reader API for the duration of
 -- some monadic action. If the ChainDB does not contain the tip of the Index,
@@ -39,6 +57,11 @@ trackReader idx reader = do
 -- It will spawn a thread to do the index updates. This must be the only
 -- index writer. It is run by `race` with the action, so exceptions in either
 -- the action or the writer thread will be re-thrown here.
+--
+-- If the tip of the index is not in the ChainDB, then the entire index will be
+-- rebuilt. This is not ideal: there may be an intersection. TODO would be
+-- better to check the newest slot older than `k` back from tip of index, and
+-- go from there.
 trackChainDB :: forall blk t . Index IO (Header blk) -> ChainDB IO blk -> IO t -> IO t
 trackChainDB idx cdb act = bracket acquireReader releaseReader $ \rdr -> do
   tipPoint <- Index.tip idx
@@ -50,7 +73,10 @@ trackChainDB idx cdb act = bracket acquireReader releaseReader $ \rdr -> do
   case mPoint of
     Nothing -> Index.rollbackward idx Origin
     Just _  -> pure ()
-  outcome <- race (trackReader idx rdr) act
+  -- First, block until the index is caught up to the tip ...
+  trackReader idx rdr
+  -- ... then attempt to stay in sync.
+  outcome <- race (trackReaderBlocking idx rdr) act
   case outcome of
     Left impossible -> impossible
     Right t -> pure t

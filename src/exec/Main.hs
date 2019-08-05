@@ -83,6 +83,7 @@ import qualified Pos.Util.Wlog as Wlog
 
 import Ouroboros.Byron.Proxy.Block (Block)
 import Ouroboros.Byron.Proxy.Index.Types (Index)
+import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Index (TraceEvent)
 import Ouroboros.Byron.Proxy.Main
 import Ouroboros.Consensus.Block (GetHeader (Header))
 import Ouroboros.Consensus.BlockchainTime (SlotLength (..), SystemStart (..), realBlockchainTime)
@@ -676,6 +677,10 @@ main = do
                   let val = ("db", Monitoring.Error, Monitoring.LogMessage (fromString (show it)))
                   in  doConvertedTrace val
               _ -> pure ()
+            indexTracer :: Tracer IO Index.TraceEvent
+            indexTracer = Tracer $ \trEvent ->
+              let val = ("index", Monitoring.Info, Monitoring.LogMessage (fromString (show trEvent)))
+              in  doConvertedTrace val
         traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Opening database")
         -- Thread registry is needed by ChainDB and by the network protocols.
         -- I assume it's supposed to be shared?
@@ -699,7 +704,7 @@ main = do
               slotDuration = SlotLength (Cardano.ppSlotDuration (Cardano.gdProtocolParameters (Cardano.configGenesisData newGenesisConfig)))
               systemStart = SystemStart (Cardano.gdStartTime (Cardano.configGenesisData newGenesisConfig))
           btime <- realBlockchainTime treg slotDuration systemStart
-          withDB dbc dbTracer treg securityParam nodeConfig extLedgerState $ \idx cdb -> do
+          withDB dbc dbTracer indexTracer treg securityParam nodeConfig extLedgerState $ \idx cdb -> do
             traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
             Shelley.withVersions treg cdb nodeConfig nodeState btime $ \ctable iversions rversions -> do
               let server = runShelleyServer (soLocalAddress      (bpoShelleyOptions bpo)) treg ctable rversions
