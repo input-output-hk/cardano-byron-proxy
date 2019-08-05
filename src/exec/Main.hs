@@ -338,6 +338,7 @@ runShelleyClient producerAddrs _ ctable iversions = do
         connectToNode'
           (\(DictVersion codec) -> encodeTerm codec)
           (\(DictVersion codec) -> decodeTerm codec)
+          nullTracer
           Shelley.mkPeer
           (iversions)
           sock
