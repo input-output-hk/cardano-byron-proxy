@@ -20,7 +20,8 @@ library
                        Ouroboros.Byron.Proxy.Main,
                        Ouroboros.Byron.Proxy.Index.ChainDB,
                        Ouroboros.Byron.Proxy.Index.Sqlite,
-                       Ouroboros.Byron.Proxy.Index.Types
+                       Ouroboros.Byron.Proxy.Index.Types,
+                       Ouroboros.Byron.Proxy.Genesis.Convert
   -- other-modules:
   -- other-extensions:
   build-depends:       base,
@@ -42,6 +43,7 @@ library
                        contra-tracer,
                        cryptonite,
                        directory,
+                       filepath,
                        io-sim-classes,
                        iohk-monitoring,
                        lens,
@@ -55,9 +57,11 @@ library
                        stm,
                        tagged,
                        text,
+                       time,
                        transformers,
                        typed-protocols,
-                       unliftio-core
+                       unliftio-core,
+                       unordered-containers
   hs-source-dirs:      src/lib
   default-language:    Haskell2010
   ghc-options:         -Wall
