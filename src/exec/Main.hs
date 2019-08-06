@@ -219,7 +219,7 @@ cliParser = ByronProxyOptions
   cliAddress :: String -> String -> Opt.Parser Address
   cliAddress prefix help = Opt.option (Opt.eitherReader parseAddress) $
     Opt.long (dashconcat (prefix : ["addr"])) <>
-    Opt.metavar "(HOSTNAME,SERVIVCENAME)" <>
+    Opt.metavar "[HOSTNAME]:SERVIVCENAME" <>
     Opt.help help
 
   cliByronOptions :: Opt.Parser (Maybe ByronOptions)
