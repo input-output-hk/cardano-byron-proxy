@@ -190,7 +190,7 @@ txKeyValFromMempool mempool txTicketMapVar = KeyVal
     -- Peer gave us this transaction. Put it into the pool and give False to
     -- mean it should _not_ be relayed.
     , handleData = \txMsgContents -> do
-        let tx   = fromByronTx txMsgContents
+        let tx   = fromByronTxMsgContents txMsgContents
             txid = Tx.In.txId writer tx
         outcome <- Tx.In.mempoolAddTxs writer [tx]
         case outcome of
@@ -288,6 +288,9 @@ toByronTxId (Cardano.AbstractHash txId) = CSL.AbstractHash txId
 toByronTxMsgContents :: GenTx (Block cfg) -> TxMsgContents
 toByronTxMsgContents = TxMsgContents . toByronTxAux
 
+fromByronTxMsgContents :: TxMsgContents -> GenTx (Block cfg)
+fromByronTxMsgContents (TxMsgContents txAux) = fromByronTxAux txAux
+
 -- | The `GenTx (Block cfg)` contains a `Cardano.TxAux` with `ByteString`
 -- annotation. Conversion proceeds by decoding a Byron `TxAux` from that.
 -- It's basically an assertion failure if the decoding fails. It means our
@@ -295,18 +298,18 @@ toByronTxMsgContents = TxMsgContents . toByronTxAux
 toByronTxAux :: GenTx (Block cfg) -> TxAux
 toByronTxAux tx = case (decodedTx, decodedWitness) of
     (Right tx', Right witness) -> TxAux tx' witness
-    (Left err, _) -> error $ "toByronTx: Tx codec inconsistent " ++ show err
-    (_, Left err) -> error $ "toByronTx: TxWitness codec inconsistent " ++ show err
+    (Left err, _) -> error $ "toByronTxAux: Tx codec inconsistent " ++ show err
+    (_, Left err) -> error $ "toByronTxAux: TxWitness codec inconsistent " ++ show err
   where
     decodedTx      = CSL.decodeFull' (Binary.annotation (Cardano.aTaTx (byronTx tx)))
     decodedWitness = CSL.decodeFull' (Binary.annotation (Cardano.aTaWitness (byronTx tx)))
 
 -- In order to get a `GenTx (Block cfg)`, we need `ByteString` annotations on
 -- its parts. Only way to get that is to encode parts of the transaction.
-fromByronTx :: TxMsgContents -> GenTx (Block cfg)
-fromByronTx (TxMsgContents txAux) = case Binary.decodeFullAnnotatedBytes "TxAux" decoder cslBytes of
+fromByronTxAux :: TxAux -> GenTx (Block cfg)
+fromByronTxAux txAux = case Binary.decodeFullAnnotatedBytes "TxAux" decoder cslBytes of
     Right txAux' -> mkByronTx txAux'
-    Left  err   -> error $ "fromByronTx: TxAux codec inconsistent " ++ show err
+    Left  err   -> error $ "fromByronTxAux: TxAux codec inconsistent " ++ show err
   where
     cslBytes = CSL.serialize txAux
     decoder :: Decoder s (Cardano.ATxAux Binary.ByteSpan)
