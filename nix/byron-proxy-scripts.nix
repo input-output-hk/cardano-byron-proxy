@@ -24,7 +24,7 @@ let
     } // envConfig
       // customConfig;
   in with config; pkgs.writeScript "byron-proxy-${environment}" ''
-    exec ${byronProxy}/bin/cardano-byron-proxy +RTS -T -RTS --database-path db-byron-proxy-${environment} --index-path index-byron-proxy-${environment} --configuration-file ${configuration}/lib/configuration.yaml --configuration-key ${envConfig.confKey} --topology ${topologyFile} --logger-config ${loggingConfig} --local-addr [${proxyHost}]:${toString proxyPort} ${lib.optionalString (pbftThreshold != null) "--pbft-threshold ${pbftThreshold}"} ${lib.optionalString (nodeId != null) "--node-id ${nodeId}"}
+    exec ${byronProxy}/bin/cardano-byron-proxy +RTS -T -RTS --database-path db-byron-proxy-${environment} --index-path index-byron-proxy-${environment} --configuration-file ${configuration}/lib/configuration.yaml --configuration-key ${envConfig.confKey} --topology ${topologyFile} --logger-config ${loggingConfig} --local-addr [${proxyHost}]:${toString proxyPort} ${lib.optionalString (pbftThreshold != null) "--pbft-threshold ${pbftThreshold}"} ${lib.optionalString (nodeId != null) "--node-id ${nodeId}"} $@
   '';
   configuration = cardanoConfig;
 
