@@ -5,25 +5,31 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
 module Ouroboros.Byron.Proxy.Main where
 
-import Control.Concurrent.Async (withAsync)
-import Control.Concurrent.STM (STM, atomically)
+import Control.Arrow (first)
+import Codec.CBOR.Decoding (Decoder)
+import Control.Concurrent.Async (concurrently, race)
+import Control.Concurrent.STM (STM, atomically, check)
 import Control.Concurrent.STM.TBQueue (TBQueue, newTBQueueIO, readTBQueue,
                                        writeTBQueue)
 import Control.Concurrent.STM.TVar (TVar, modifyTVar', newTVarIO, readTVar)
 import Control.Exception (Exception, bracket, throwIO)
-import Control.Monad (forM, void, when)
+import Control.Monad (join, forM, void, when)
 import Control.Monad.Trans.Class (lift)
 import Control.Lens ((^.))
 import Control.Tracer (Tracer, traceWith)
 import Data.Conduit (ConduitT, (.|), await, runConduit, yield)
+import Data.Foldable (foldlM)
 import Data.List (maximumBy)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Maybe (catMaybes, fromMaybe)
 import Data.Ord (comparing)
 import Data.Proxy (Proxy (..))
@@ -32,10 +38,13 @@ import Data.Text (Text)
 import qualified Data.Text.Lazy.Builder as Text (Builder)
 import Numeric.Natural (Natural)
 
+import qualified Cardano.Binary as Binary
 import Cardano.BM.Data.Severity (Severity (..))
 import Cardano.Chain.Slotting (EpochSlots)
+import qualified Cardano.Chain.UTxO as Cardano
+import qualified Cardano.Crypto as Cardano (AbstractHash (..))
 
-import Pos.Binary.Class (decodeFull)
+import qualified Pos.Binary.Class as CSL (decodeFull, decodeFull', serialize)
 import qualified Pos.Chain.Block as Byron.Legacy (Block, BlockHeader, HeaderHash,
                                                   MainBlockHeader, getBlockHeader,
                                                   headerHash)
@@ -49,6 +58,7 @@ import Pos.Communication (NodeId)
 import Pos.Core (HasDifficulty(difficultyL), StakeholderId, addressHash,
                  getEpochOrSlot)
 import Pos.Core.Chrono (NewestFirst (..), OldestFirst (..))
+import qualified Pos.Crypto as CSL (AbstractHash (..))
 import Pos.Crypto (hash)
 import Pos.DB.Class (SerializedBlock)
 import Pos.DB.Block (GetHeadersFromManyToError (..), GetHashesRangeError (..))
@@ -65,12 +75,18 @@ import Ouroboros.Byron.Proxy.Block (Block, Header, toSerializedBlock,
                                     headerHash)
 import Ouroboros.Byron.Proxy.Index.Types (Index)
 import qualified Ouroboros.Byron.Proxy.Index.Types as Index
-import Ouroboros.Byron.Proxy.Pool (Pool, withPool)
+import Ouroboros.Byron.Proxy.Pool (Pool)
 import qualified Ouroboros.Byron.Proxy.Pool as Pool (insert, lookup)
 import Ouroboros.Consensus.Block (getHeader)
-import Ouroboros.Consensus.Ledger.Byron (blockBytes)
+import Ouroboros.Consensus.Ledger.Byron (blockBytes, byronTx, byronTxId, mkByronTx)
+import Ouroboros.Consensus.Node (getMempoolReader, getMempoolWriter)
+import Ouroboros.Consensus.Mempool.API (Mempool, ApplyTx, GenTx, GenTxId)
+import qualified Ouroboros.Consensus.Mempool.API as Mempool
+import Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import Ouroboros.Network.Block (ChainUpdate (..), Point (..))
 import qualified Ouroboros.Network.Point as Point (block)
+import qualified Ouroboros.Network.TxSubmission.Inbound as Tx.In
+import qualified Ouroboros.Network.TxSubmission.Outbound as Tx.Out
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
@@ -161,6 +177,166 @@ taggedKeyValFromPool ptag keyFromValue process pool = KeyVal
       process v
       pure False
   }
+
+taggedKeyValNoOp
+  :: Applicative m
+  => Proxy tag
+  -> (v -> k)
+  -> KeyVal (Tagged tag k) v m
+taggedKeyValNoOp ptag keyFromValue = KeyVal
+  { toKey      = pure . tagWith ptag . keyFromValue
+  -- We don't want it.
+  , handleInv  = const (pure False)
+  -- We don't have it.
+  , handleReq  = const (pure Nothing)
+  -- We don't care about it and will not relay it.
+  , handleData = const (pure False)
+  }
+
+-- | Make a `KeyVal` for transactions backed by a `Mempool`.
+-- The `TVar` is expected to be kept somewhat in sync with the actual contents
+-- of the mempool, which works on monotonically-increasing ticket numbers and
+-- has no index based on hash (which Byron requires).
+txKeyValFromMempool
+  :: forall cfg .
+     ( ApplyTx (Block cfg) )
+  => Mempool IO (Block cfg) TicketNo
+  -> TVar (Map TxId TicketNo)
+  -> KeyVal (Tagged TxMsgContents TxId) TxMsgContents IO
+txKeyValFromMempool mempool txTicketMapVar = KeyVal
+    { toKey = pure . tagWith ptag . keyFromValue
+    -- Peer offers this transaction. Give True if we don't have it (we want it)
+    -- and False otherwise.
+    , handleInv = \txId -> atomically $ do
+        snapshot <- Tx.Out.mempoolGetSnapshot reader
+        ticketMap <- readTVar txTicketMapVar
+        let outcome = do
+              ticketNo <- Map.lookup (untag txId) ticketMap
+              Tx.Out.mempoolLookupTx snapshot ticketNo
+        pure $ maybe True (const False) outcome
+    -- Peer requests this transaction. Give Nothing if we don't have it, and
+    -- Just if we do.
+    , handleReq = \txId -> atomically $ do
+        snapshot <- Tx.Out.mempoolGetSnapshot reader
+        ticketMap <- readTVar txTicketMapVar
+        let outcome = do
+              ticketNo <- Map.lookup (untag txId) ticketMap
+              Tx.Out.mempoolLookupTx snapshot ticketNo
+        pure $ fmap toByronTxMsgContents outcome
+    -- Peer gave us this transaction. Put it into the pool and give False to
+    -- mean it should _not_ be relayed.
+    , handleData = \txMsgContents -> do
+        let tx   = fromByronTx txMsgContents
+            txid = Tx.In.txId writer tx
+        outcome <- Tx.In.mempoolAddTxs writer [tx]
+        case outcome of
+          []          -> pure False
+          -- Relay if it was added, and remember the ticket number of the
+          -- transaction id.
+          (txid' : _) -> pure (txid == txid')
+    }
+  where
+    ptag :: Proxy TxMsgContents
+    ptag = Proxy
+    keyFromValue :: TxMsgContents -> TxId
+    keyFromValue = hash . taTx . getTxMsgContents
+    reader :: Tx.Out.TxSubmissionMempoolReader (GenTxId (Block cfg)) (GenTx (Block cfg)) TicketNo IO
+    reader = getMempoolReader mempool
+    writer :: Tx.In.TxSubmissionMempoolWriter (GenTxId (Block cfg)) (GenTx (Block cfg)) TicketNo IO
+    writer = getMempoolWriter mempool
+
+-- | Try to send every transaction found in the mempool out to the Byron
+-- network.
+--
+-- It's possible that some transactions are missed, perhaps because `sendTx`
+-- takes too long a time. But that's ok.
+-- It's also possible that the transactions sent by this were actually received
+-- from Byron, and relayed by the Byron inv/req/data system. That's also ok:
+-- if a peer already has it, it won't ask for it (it will ignore the inv).
+sendTxsFromMempool :: Mempool IO (Block cfg) TicketNo -> Diffusion IO -> IO x
+sendTxsFromMempool mempool diff = go (Mempool.zeroIdx mempool)
+  where
+    go ticketNo = do
+      snapshot <- atomically $ Mempool.getSnapshot mempool
+      -- Left fold to take the TicketNo of the rightmost member.
+      -- Mempool claims this will always be increasing.
+      let folder = \_ (tx, idx) -> do
+            sendTx diff (toByronTxAux tx)
+            pure idx
+      ticketNo' <- foldlM folder ticketNo (Mempool.snapshotTxsAfter snapshot ticketNo)
+      go ticketNo'
+
+-- | Keep a map from Byron transaction ids to ticket numbers in sync with the
+-- mempool. Of course there could be some lag depending on the scheduler.
+updateMempoolIdMap
+  :: forall cfg x .
+     Mempool IO (Block cfg) TicketNo
+  -> TVar (Map TxId TicketNo)
+  -> IO x
+updateMempoolIdMap mempool tvar = go [] (Mempool.zeroIdx mempool)
+  where
+    go currentTxs ticketNo = join $ atomically $ do
+      snapshot <- Mempool.getSnapshot mempool
+      let txs = Mempool.snapshotTxs snapshot
+          -- The prefix of the current list not in the new list is the removals.
+          removals :: [(GenTx (Block cfg), TicketNo)]
+          removals = takeUntilMatch currentTxs txs
+          -- Additions are found by using the current ticket number
+          additions :: [(GenTx (Block cfg), TicketNo)]
+          additions = Mempool.snapshotTxsAfter snapshot ticketNo
+      -- Retry if there is no change.
+      check (not (null removals && null additions))
+      -- Update the map according to removals and additions.
+      -- This ought to be the same as a `fromList` on `txs`, but the idea is
+      -- that it will be faster this way as the mempool grows. Maybe it's not
+      -- worth the trouble though?
+      let removalList :: [TxId]
+          removalList = fmap (toByronTxId . byronTxId . fst) removals
+          additionList :: [(TxId, TicketNo)]
+          additionList = fmap (first (toByronTxId . byronTxId)) additions
+      modifyTVar' tvar $ \idmap ->
+        foldl (flip (uncurry Map.insert)) (foldl (flip Map.delete) idmap removalList) additionList
+      let currentTxs' = txs
+          ticketNo' = case additions of
+            [] -> ticketNo
+            _  -> snd (last additions)
+      pure $ go currentTxs' ticketNo'
+
+    takeUntilMatch :: Eq b => [(a, b)] -> [(a, b)] -> [(a, b)]
+    takeUntilMatch []            ys                         = ys
+    takeUntilMatch xs            []                         = xs
+    takeUntilMatch ((a, b) : xs) ((_, b') : ys) | b == b'   = []
+                                                | otherwise = (a, b) : takeUntilMatch xs ys
+
+toByronTxId :: Cardano.TxId -> TxId
+toByronTxId (Cardano.AbstractHash txId) = CSL.AbstractHash txId
+
+toByronTxMsgContents :: GenTx (Block cfg) -> TxMsgContents
+toByronTxMsgContents = TxMsgContents . toByronTxAux
+
+-- | The `GenTx (Block cfg)` contains a `Cardano.TxAux` with `ByteString`
+-- annotation. Conversion proceeds by decoding a Byron `TxAux` from that.
+-- It's basically an assertion failure if the decoding fails. It means our
+-- codec must be wrong.
+toByronTxAux :: GenTx (Block cfg) -> TxAux
+toByronTxAux tx = case (decodedTx, decodedWitness) of
+    (Right tx', Right witness) -> TxAux tx' witness
+    (Left err, _) -> error $ "toByronTx: Tx codec inconsistent " ++ show err
+    (_, Left err) -> error $ "toByronTx: TxWitness codec inconsistent " ++ show err
+  where
+    decodedTx      = CSL.decodeFull' (Binary.annotation (Cardano.aTaTx (byronTx tx)))
+    decodedWitness = CSL.decodeFull' (Binary.annotation (Cardano.aTaWitness (byronTx tx)))
+
+-- In order to get a `GenTx (Block cfg)`, we need `ByteString` annotations on
+-- its parts. Only way to get that is to encode parts of the transaction.
+fromByronTx :: TxMsgContents -> GenTx (Block cfg)
+fromByronTx (TxMsgContents txAux) = case Binary.decodeFullAnnotatedBytes "TxAux" decoder cslBytes of
+    Right txAux' -> mkByronTx txAux'
+    Left  err   -> error $ "fromByronTx: TxAux codec inconsistent " ++ show err
+  where
+    cslBytes = CSL.serialize txAux
+    decoder :: Decoder s (Cardano.ATxAux Binary.ByteSpan)
+    decoder  = Binary.fromCBOR
 
 type TxPool = Pool TxId TxMsgContents
 type UpProposalPool = Pool UpId (UpdateProposal, [UpdateVote])
@@ -350,7 +526,7 @@ bbsGetBlockHeader _ idx db onErr hh = do
         Nothing  -> pure Nothing
         -- The Block must be converted to a Byron.Legacy.Block and then its
         -- header taken.
-        Just blk -> case decodeFull (blockBytes blk) of
+        Just blk -> case CSL.decodeFull (blockBytes blk) of
           Left  err       -> onErr err
           Right legacyBlk -> pure $ Just $ Byron.Legacy.getBlockHeader legacyBlk
       where
@@ -452,7 +628,7 @@ bbsGetBlockHeaders epochSlots idx db onErr mLimit checkpoints mTip = do
     []    -> pure Nothing
     -- Now we know `newestCheckpoints` is not _|_ (maximumBy is partial).
     _ : _ ->
-      let f = \blk -> case decodeFull (blockBytes blk) of
+      let f = \blk -> case CSL.decodeFull (blockBytes blk) of
                 Left err          -> onErr err
                 Right legacyBlock -> pure $ Byron.Legacy.getBlockHeader legacyBlock
       in  bbsStreamBlocks epochSlots idx db onErr (Byron.Legacy.headerHash newestCheckpoint) f True $ \producer ->
@@ -521,22 +697,15 @@ instance Exception EmptyDatabaseError
 -- The `DB` given must not be empty. If it is, `getTip` will throw an
 -- exception. So be sure to seed the DB with the genesis block.
 withByronProxy
-  :: Tracer IO (Severity, Text.Builder)
+  :: ( ApplyTx (Block cfg) )
+  => Tracer IO (Severity, Text.Builder)
   -> ByronProxyConfig
   -> Index IO (Header (Block cfg))
   -> ChainDB IO (Block cfg)
+  -> Mempool IO (Block cfg) TicketNo
   -> (ByronProxy -> IO t)
   -> IO t
-withByronProxy trace bpc idx db k =
-  -- Create pools for all relayed data.
-  -- TODO what about for delegation certificates?
-  withPool (bpcPoolRoundInterval bpc) $ \(txPool :: TxPool) ->
-  withPool (bpcPoolRoundInterval bpc) $ \(upProposalPool :: UpProposalPool) ->
-  withPool (bpcPoolRoundInterval bpc) $ \(upVotePool :: UpVotePool) ->
-  withPool (bpcPoolRoundInterval bpc) $ \(sscCommitmentPool :: SscCommitmentPool) ->
-  withPool (bpcPoolRoundInterval bpc) $ \(sscOpeningPool :: SscOpeningPool) ->
-  withPool (bpcPoolRoundInterval bpc) $ \(sscSharesPool :: SscSharesPool) ->
-  withPool (bpcPoolRoundInterval bpc) $ \(sscVssCertPool :: SscVssCertPool) -> do
+withByronProxy trace bpc idx db mempool k = do
 
     -- The best announced block header, and the identifiers of every peer which
     -- announced it. `Nothing` whenever there is no known announcement. It will
@@ -549,6 +718,12 @@ withByronProxy trace bpc idx db k =
     -- the diffusion layer to send (ultimately by way of the outbound queue).
     atomRecvQueue :: TBQueue Atom <- newTBQueueIO (bpcRecvQueueSize bpc)
     atomSendQueue :: TBQueue Atom <- newTBQueueIO (bpcSendQueueSize bpc)
+
+    -- Associates Byron transaction identifiers (their hashes) with Shelley
+    -- mempool ticket numbers. Needed because the Byron relay system is
+    -- random access by TxId.
+    -- Kept in sync by `updateMempoolIdMap`,
+    txTicketMapVar :: TVar (Map TxId TicketNo) <- newTVarIO mempty
 
     let byronProxy :: Diffusion IO -> ByronProxy
         byronProxy diff = ByronProxy
@@ -565,11 +740,19 @@ withByronProxy trace bpc idx db k =
         takeBestTip :: STM (Maybe (BestTip Byron.Legacy.BlockHeader))
         takeBestTip = readTVar tipsTVar
 
+        -- FIXME this probably isn't necessary anymore.
+        -- Transactions are sent indirectly, by adding them to the mempool
         sendingThread :: forall x . Diffusion IO -> IO x
         sendingThread diff = do
           atom <- atomically $ readTBQueue atomSendQueue
           sendAtomToByron diff atom
           sendingThread diff
+
+        background :: forall x . Diffusion IO -> IO x
+        background diff = fmap (\(x, _) -> x) $
+          concurrently (sendingThread diff) $
+            concurrently (sendTxsFromMempool mempool diff)
+                         (updateMempoolIdMap mempool txTicketMapVar)
 
         blockDecodeError :: forall x . Text -> IO x
         blockDecodeError text = throwIO $ MalformedBlock text
@@ -588,47 +771,29 @@ withByronProxy trace bpc idx db k =
           , postBlockHeader    = \header peer -> atomically $
               modifyTVar' tipsTVar $ Just . updateBestTipMaybe peer header
 
-            -- For these, we just need little mempools.
-            -- Must be able to poke these mempools from Shelley, too
-          , postTx            = taggedKeyValFromPool
-              (Proxy :: Proxy TxMsgContents)
-              (hash . taTx . getTxMsgContents)
-              (atomically . writeTBQueue atomRecvQueue . Transaction)
-              txPool
-          , postUpdate        = taggedKeyValFromPool
+          , postTx            = txKeyValFromMempool mempool txTicketMapVar
+
+          , postUpdate        = taggedKeyValNoOp
               (Proxy :: Proxy (UpdateProposal, [UpdateVote]))
               (hash . fst)
-              (atomically . writeTBQueue atomRecvQueue . UpdateProposal)
-              upProposalPool
-          , postVote          = taggedKeyValFromPool
+          , postVote          = taggedKeyValNoOp
               (Proxy :: Proxy UpdateVote)
               (\uv -> (uvProposalId uv, uvKey uv, uvDecision uv))
-              (atomically . writeTBQueue atomRecvQueue . UpdateVote)
-              upVotePool
-          , postSscCommitment = taggedKeyValFromPool
+          , postSscCommitment = taggedKeyValNoOp
               (Proxy :: Proxy MCCommitment)
               (\(MCCommitment (pk, _, _)) -> addressHash pk)
-              (atomically . writeTBQueue atomRecvQueue . Commitment)
-              sscCommitmentPool
-          , postSscOpening    = taggedKeyValFromPool
+          , postSscOpening    = taggedKeyValNoOp
               (Proxy :: Proxy MCOpening)
               (\(MCOpening key _) -> key)
-              (atomically . writeTBQueue atomRecvQueue . Opening)
-              sscOpeningPool
-          , postSscShares     = taggedKeyValFromPool
+          , postSscShares     = taggedKeyValNoOp
               (Proxy :: Proxy MCShares)
               (\(MCShares key _) -> key)
-              (atomically . writeTBQueue atomRecvQueue . Shares)
-              sscSharesPool
-          , postSscVssCert    = taggedKeyValFromPool
+          , postSscVssCert    = taggedKeyValNoOp
               (Proxy :: Proxy MCVssCertificate)
               (\(MCVssCertificate vc) -> getCertId vc)
-              (atomically . writeTBQueue atomRecvQueue . VssCertificate)
-              sscVssCertPool
 
-            -- TODO FIXME what to do for this? Should we relay it using a pool?
-            -- I'm not sure if the full diffusion/logic even does relaying of
-            -- these.
+          -- Nothing to do for delegation certificates.
+          -- FIXME verify that this meets requirements.
           , postPskHeavy = \_ -> pure True
 
           -- Given a bunch of hashes, find LCA with main chain.
@@ -652,7 +817,7 @@ withByronProxy trace bpc idx db k =
                 Nothing -> do
                   traceWith trace (Error, "getTip: empty database")
                   throwIO $ EmptyDatabaseError
-                Just blk -> case decodeFull (blockBytes blk) of
+                Just blk -> case CSL.decodeFull (blockBytes blk) of
                   Left  err       -> do
                     traceWith trace (Error, "getTip: malformed block")
                     throwIO $ MalformedBlock err
@@ -679,5 +844,9 @@ withByronProxy trace bpc idx db k =
         fdconf = bpcDiffusionConfig bpc
 
     diffusionLayerFull fdconf networkConfig Nothing mkLogic $ \diffusionLayer -> do
-      runDiffusionLayer diffusionLayer $ withAsync (sendingThread (diffusion diffusionLayer)) $
-        \_ -> k (byronProxy (diffusion diffusionLayer))
+      runDiffusionLayer diffusionLayer $ do
+        outcome <- race (background (diffusion diffusionLayer))
+                        (k (byronProxy (diffusion diffusionLayer)))
+        case outcome of
+          Left  impossible -> impossible
+          Right t          -> pure t

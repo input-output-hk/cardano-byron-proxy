@@ -58,34 +58,26 @@ type InitiatorVersions = Versions NodeToNodeVersion DictVersion (OuroborosApplic
 type ResponderVersions = Versions NodeToNodeVersion DictVersion (AnyResponderApp Peer NodeToNodeProtocols IO Lazy.ByteString)
 
 -- Must have `ByronGiven` because of the constraints on `nodeKernel`
-withVersions
+withShelley
   :: ( ByronGiven )
   => ThreadRegistry IO
   -> ChainDB IO (Block ByronConfig)
   -> NodeConfig (BlockProtocol (Block ByronConfig))
   -> NodeState (BlockProtocol (Block ByronConfig))
   -> BlockchainTime IO
-  -> (ConnectionTable IO -> InitiatorVersions -> ResponderVersions -> IO t)
+  -> (NodeKernel IO Peer (Block ByronConfig) -> ConnectionTable IO -> InitiatorVersions -> ResponderVersions -> IO t)
   -> IO t
-withVersions tr cdb conf state blockchainTime k = do
+withShelley tr cdb conf state blockchainTime k = do
   ctable <- newConnectionTable
-  let params = mkParams tr cdb conf state blockchainTime
-  apps <- networkApps params
-  let vs = versions apps
-  k ctable (initiatorNetworkApplication <$> vs) (responderNetworkApplication <$> vs)
-
--- | It's in `IO` because `nodeKernel` needs `IO`.
-networkApps
-  :: ( ByronGiven )
-  => NodeParams IO Peer (Block ByronConfig)
-  -> IO (NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ())
-networkApps nodeParams = do
+  let nodeParams = mkParams tr cdb conf state blockchainTime
   kernel <- nodeKernel nodeParams
-  pure $ consensusNetworkApps
-    kernel
-    nullProtocolTracers
-    codecs
-    (protocolHandlers nodeParams kernel)
+  let apps = consensusNetworkApps
+        kernel
+        nullProtocolTracers
+        codecs
+        (protocolHandlers nodeParams kernel)
+      vs = versions apps
+  k kernel ctable (initiatorNetworkApplication <$> vs) (responderNetworkApplication <$> vs)
 
 -- | Found in cardano-node that the network magic should be 0.
 vData :: NodeToNodeVersionData
