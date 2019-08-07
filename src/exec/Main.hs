@@ -400,9 +400,6 @@ runByron tracer byronOptions genesisConfig _ epochSlots idx db mempool = do
               , CSL.fdcStreamWindow = CSL.streamWindow
               , CSL.fdcBatchSize    = 64
               }
-            -- 40 seconds.
-            -- TODO configurable for these 3.
-          , bpcPoolRoundInterval = 40000000
           , bpcSendQueueSize     = 1
           , bpcRecvQueueSize     = 1
           }

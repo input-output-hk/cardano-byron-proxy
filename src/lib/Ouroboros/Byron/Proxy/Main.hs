@@ -52,11 +52,9 @@ import Pos.Chain.Delegation (ProxySKHeavy)
 import Pos.Chain.Ssc (MCCommitment (..), MCOpening (..), MCShares (..),
                       MCVssCertificate (..), getCertId)
 import Pos.Chain.Txp (TxAux (..), TxId, TxMsgContents (..))
-import Pos.Chain.Update (BlockVersionData, UpdateProposal (..), UpdateVote (..),
-                         UpId, VoteId)
+import Pos.Chain.Update (BlockVersionData, UpdateProposal (..), UpdateVote (..))
 import Pos.Communication (NodeId)
-import Pos.Core (HasDifficulty(difficultyL), StakeholderId, addressHash,
-                 getEpochOrSlot)
+import Pos.Core (HasDifficulty(difficultyL), addressHash, getEpochOrSlot)
 import Pos.Core.Chrono (NewestFirst (..), OldestFirst (..))
 import qualified Pos.Crypto as CSL (AbstractHash (..))
 import Pos.Crypto (hash)
@@ -75,8 +73,6 @@ import Ouroboros.Byron.Proxy.Block (Block, Header, toSerializedBlock,
                                     headerHash)
 import Ouroboros.Byron.Proxy.Index.Types (Index)
 import qualified Ouroboros.Byron.Proxy.Index.Types as Index
-import Ouroboros.Byron.Proxy.Pool (Pool)
-import qualified Ouroboros.Byron.Proxy.Pool as Pool (insert, lookup)
 import Ouroboros.Consensus.Block (getHeader)
 import Ouroboros.Consensus.Ledger.Byron (blockBytes, byronTx, byronTxId, mkByronTx)
 import Ouroboros.Consensus.Node (getMempoolReader, getMempoolWriter)
@@ -98,9 +94,6 @@ data ByronProxyConfig = ByronProxyConfig
   , bpcEpochSlots        :: !EpochSlots
   , bpcNetworkConfig     :: !(NetworkConfig KademliaParams)
   , bpcDiffusionConfig   :: !FullDiffusionConfiguration
-    -- | How long rounds in the pools last, in microseconds. Data in the pools
-    -- will live for at least this long, and at most 2 times this long.
-  , bpcPoolRoundInterval :: !Natural
     -- | Size of the send queue. Sending atomic (non-block data) to Byron
     -- will block if this queue is full.
   , bpcSendQueueSize     :: !Natural
@@ -147,35 +140,6 @@ data ByronProxy = ByronProxy
     -- | Send an atom to the Byron network. It's in STM because the send is
     -- performed asynchronously.
   , sendAtom      :: Atom -> STM ()
-  }
-
--- | Make a logic layer `KeyVal` from a `Pool`. A `Tagged` is thrown on
--- because that's what the logic layer needs on all keys.
-taggedKeyValFromPool
-  :: ( Ord k )
-  => Proxy tag
-  -> (v -> k)
-  -- ^ Get the key from the value.
-  -> (v -> IO ())
-  -- ^ Handle incoming data of this type.
-  -> Pool k v
-  -> KeyVal (Tagged tag k) v IO
-taggedKeyValFromPool ptag keyFromValue process pool = KeyVal
-  { -- This is needed by the old relay system, so it can make the INV
-    -- announcements after a DATA messages has been processed.
-    toKey = pure . tagWith ptag . keyFromValue
-    -- Handle an INV: True if we don't have it, False if we do.
-  , handleInv = \k -> fmap (maybe True (const False)) $ atomically $
-      Pool.lookup (untag k) pool
-    -- Handle a REQ: Nothing if we don't have it, Just if we do.
-  , handleReq = \k -> atomically $ Pool.lookup (untag k) pool
-    -- Handle a DATA: put it into the pool, process it, and give False to mean it
-    -- should _not_ be relayed. For this Byron proxy, we'll never relay data
-    -- received from Byron to another Byron node.
-  , handleData = \v -> do
-      atomically $ Pool.insert (keyFromValue v) v pool
-      process v
-      pure False
   }
 
 taggedKeyValNoOp
@@ -347,14 +311,6 @@ fromByronTx (TxMsgContents txAux) = case Binary.decodeFullAnnotatedBytes "TxAux"
     cslBytes = CSL.serialize txAux
     decoder :: Decoder s (Cardano.ATxAux Binary.ByteSpan)
     decoder  = Binary.fromCBOR
-
-type TxPool = Pool TxId TxMsgContents
-type UpProposalPool = Pool UpId (UpdateProposal, [UpdateVote])
-type UpVotePool = Pool VoteId UpdateVote
-type SscCommitmentPool = Pool StakeholderId MCCommitment
-type SscOpeningPool = Pool StakeholderId MCOpening
-type SscSharesPool = Pool StakeholderId MCShares
-type SscVssCertPool = Pool StakeholderId MCVssCertificate
 
 -- | Atoms are data which are not blocks.
 data Atom where
