@@ -257,14 +257,24 @@ sendTxsFromMempool :: Mempool IO (Block cfg) TicketNo -> Diffusion IO -> IO x
 sendTxsFromMempool mempool diff = go (Mempool.zeroIdx mempool)
   where
     go ticketNo = do
-      snapshot <- atomically $ Mempool.getSnapshot mempool
+      -- Block until a non-empty list of transactions to send appears.
+      txsToSend <- atomically $ do
+        snapshot <- Mempool.getSnapshot mempool
+        let txsToSend = Mempool.snapshotTxsAfter snapshot ticketNo
+        check (not (null txsToSend))
+        pure txsToSend
       -- Left fold to take the TicketNo of the rightmost member.
       -- Mempool claims this will always be increasing.
-      let folder = \_ (tx, idx) -> do
-            sendTx diff (toByronTxAux tx)
-            pure idx
-      ticketNo' <- foldlM folder ticketNo (Mempool.snapshotTxsAfter snapshot ticketNo)
+      ticketNo' <- foldlM folder ticketNo txsToSend
       go ticketNo'
+
+    -- Left fold action over a list of transactions to send: send each one and
+    -- keep the highest ticket number.
+    folder = \_ (tx, idx) -> do
+      -- Result is a Bool indicating whether it was accepted.
+      -- We don't care.
+      _ <- sendTx diff (toByronTxAux tx)
+      pure idx
 
 -- | Keep a map from Byron transaction ids to ticket numbers in sync with the
 -- mempool. Of course there could be some lag depending on the scheduler.
