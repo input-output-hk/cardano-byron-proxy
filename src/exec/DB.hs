@@ -35,6 +35,7 @@ import Ouroboros.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Impl as ChainDB
 import Ouroboros.Storage.ChainDB.Impl.Args (ChainDbArgs (..))
+import Ouroboros.Storage.EpochInfo (fixedSizeEpochInfo)
 import Ouroboros.Storage.ImmutableDB.Types (ValidationPolicy (..))
 import Ouroboros.Storage.LedgerDB.DiskPolicy (DiskPolicy (..))
 import Ouroboros.Storage.LedgerDB.MemPolicy (defaultMemPolicy)
@@ -116,7 +117,7 @@ withDB dbOptions dbTracer indexTracer tr securityParam nodeConfig extLedgerState
         , cdbDiskPolicy = ledgerDiskPolicy
 
         , cdbNodeConfig = nodeConfig
-        , cdbEpochSize = const (pure epochSize)
+        , cdbEpochInfo = fixedSizeEpochInfo epochSize
         , cdbIsEBB = isEBB
         , cdbGenesis = pure extLedgerState
 
