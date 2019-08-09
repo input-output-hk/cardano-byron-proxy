@@ -48,7 +48,7 @@ To run this as a demo you should launch a `byron-proxy` using
 stack exec -- byron-proxy --database-path db-byron-proxy-demo-server \
 \ --index-path index-byron-proxy-demo-server \
 \ --configuration-file ../cardano-sl/lib/configuration.yaml \
-\ --configuration-key mainnet_full --server-host 127.0.0.1 --server-port 7777 \
+\ --configuration-key mainnet_full --local-addr [127.0.0.1]:7777 \
 \ --topology ./topology.yaml
 ```
 , which requires a `cardano-sl` clone in the same directory as your

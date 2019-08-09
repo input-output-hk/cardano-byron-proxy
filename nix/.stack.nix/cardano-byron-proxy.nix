@@ -102,6 +102,21 @@
             (hsPkgs.unordered-containers)
             ];
           };
+        "cddl-test" = {
+          depends = [
+            (hsPkgs.base)
+            (hsPkgs.bytestring)
+            (hsPkgs.cardano-byron-proxy)
+            (hsPkgs.cardano-crypto-wrapper)
+            (hsPkgs.cardano-ledger)
+            (hsPkgs.cborg)
+            (hsPkgs.contra-tracer)
+            (hsPkgs.filepath)
+            (hsPkgs.ouroboros-consensus)
+            (hsPkgs.process-extras)
+            (hsPkgs.reflection)
+            ];
+          };
         };
       };
     } // rec { src = (pkgs.lib).mkDefault ../.././.; }

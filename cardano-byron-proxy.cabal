@@ -131,3 +131,27 @@ executable cardano-byron-proxy
                        -fwarn-unused-imports
                        -Wincomplete-record-updates
                        -Wincomplete-uni-patterns
+
+executable cddl-test
+  main-is:             Main.hs
+  hs-source-dirs:      src/cddl-test
+  default-language:    Haskell2010
+  build-depends:       base,
+                       bytestring,
+                       cardano-byron-proxy,
+                       cardano-crypto-wrapper,
+                       cardano-ledger,
+                       cborg,
+                       contra-tracer,
+                       filepath,
+                       ouroboros-consensus,
+                       process-extras,
+                       reflection
+  ghc-options:         -threaded
+                       -Wall
+                       -Wcompat
+                       -fwarn-redundant-constraints
+                       -fwarn-incomplete-patterns
+                       -fwarn-unused-imports
+                       -Wincomplete-record-updates
+                       -Wincomplete-uni-patterns
