@@ -78,7 +78,8 @@ import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..))
-import Ouroboros.Consensus.Node.ProtocolInfo.Byron (protocolInfoByron)
+import Ouroboros.Consensus.Node.ProtocolInfo.Byron (PBftSignatureThreshold (..),
+           protocolInfoByron)
 import Ouroboros.Network.NodeToNode (withServer)
 import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry, withThreadRegistry)
 import Ouroboros.Network.Block (SlotNo (..), Point (..))
@@ -105,6 +106,9 @@ data ByronProxyOptions = ByronProxyOptions
   , bpoCardanoConfigurationOptions :: !CSL.ConfigurationOptions
   , bpoShelleyOptions              :: !ShelleyOptions
   , bpoByronOptions                :: !(Maybe ByronOptions)
+  , bpoPBftSignatureThreshold      :: !(Maybe PBftSignatureThreshold)
+    -- ^ PBFT signature threshold parameter. It's not present in, and cannot
+    -- be derived from, the cardano-sl configuration.
   }
 
 -- | Host and port on which to run the Shelley server.
@@ -190,6 +194,7 @@ cliParser = ByronProxyOptions
   <*> cliCardanoConfigurationOptions
   <*> cliShelleyOptions
   <*> cliByronOptions
+  <*> cliPBftSignatureThreshold
 
   where
 
@@ -221,6 +226,13 @@ cliParser = ByronProxyOptions
     Opt.long (dashconcat (prefix : ["addr"])) <>
     Opt.metavar "[HOSTNAME]:SERVIVCENAME" <>
     Opt.help help
+
+  -- Uses the Read instance for Double.
+  cliPBftSignatureThreshold :: Opt.Parser (Maybe PBftSignatureThreshold)
+  cliPBftSignatureThreshold = Opt.optional $ Opt.option (PBftSignatureThreshold <$> Opt.auto) $
+    Opt.long "pbft-threshold" <>
+    Opt.metavar "DOUBLE" <>
+    Opt.help "PBft signature threshold"
 
   cliByronOptions :: Opt.Parser (Maybe ByronOptions)
   cliByronOptions = Opt.optional $
@@ -507,7 +519,7 @@ main = do
                 (Cardano.ApplicationName (fromString "cardano-byron-proxy")) 2
               protocolInfo = protocolInfoByron
                 newGenesisConfig
-                Nothing -- Default signature threshold.
+                (bpoPBftSignatureThreshold bpo)
                 protocolVersion
                 softwareVersion
                 Nothing
