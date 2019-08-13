@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/8273fe5f00ac03b0c66ef3841c8e957139ee18f2/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/4c48d34fd60991bb1b9168d293cfe31a975d858e/snapshot.yaml
 
 packages:
   - .
@@ -6,20 +6,20 @@ packages:
 extra-deps:
 
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: bd31cd2f3922010ddb76bb869f29c4e63bb8001b
+    commit: 38d601eb3dd20e8a27b7b7008aa90c70db911089
     subdirs:
       - iohk-monitoring
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 565df9739781db7589c7220a9125ea46a615dd40
+    commit: ace6b96d8ff13198d938a69c99cb949017c27d18
     subdirs:
       - binary
       - binary/test
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 7d6cc5d4fd1ce1ca8412b5b68c2ac8fd9b845645
+    commit: 0a71b5026bf7bda319e0c50849cf303e036e2f3c
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -27,19 +27,19 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: 8273fe5f00ac03b0c66ef3841c8e957139ee18f2
+    commit: 4c48d34fd60991bb1b9168d293cfe31a975d858e
     subdirs:
       - .
       - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: 455c006e5d1a0c1cf3d31777df24752afcbaab10
+    commit: 5c4e0b73f209631debd74795fa8cd4c92ed874fb
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: ec96c64c665b741c17b4e38f611315bae9b0b054
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: 61a69d7310cc360df788d43814ee40729eaa9340
+    commit: 49fde639a21a13c55795075b5d967bb966f1a923
     subdirs:
       - ouroboros-consensus
       - ouroboros-network
@@ -47,9 +47,6 @@ extra-deps:
       - network-mux
       - typed-protocols
       - typed-protocols-cbor
-
-  - git: https://github.com/well-typed/cborg
-    commit: 992b730ca6fd9c1da191bfecb2b67cabf31b54ad
 
   - git: https://github.com/well-typed/canonical-json
     commit: ddfe3593b80b5ceb88842bb7a6f2268df75d2c2f
