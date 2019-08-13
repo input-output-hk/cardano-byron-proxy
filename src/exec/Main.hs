@@ -106,7 +106,7 @@ data ByronProxyOptions = ByronProxyOptions
   , bpoCardanoConfigurationOptions :: !CSL.ConfigurationOptions
   , bpoShelleyOptions              :: !ShelleyOptions
   , bpoByronOptions                :: !(Maybe ByronOptions)
-  , bpoPBftSignatureThreshold      :: !PBftSignatureThreshold
+  , bpoPBftSignatureThreshold      :: !(Maybe PBftSignatureThreshold)
     -- ^ PBFT signature threshold parameter. It's not present in, and cannot
     -- be derived from, the cardano-sl configuration.
   }
@@ -228,13 +228,10 @@ cliParser = ByronProxyOptions
     Opt.help help
 
   -- Uses the Read instance for Double.
-  cliPBftSignatureThreshold :: Opt.Parser PBftSignatureThreshold
-  cliPBftSignatureThreshold = Opt.option (PBftSignatureThreshold <$> Opt.auto) $
+  cliPBftSignatureThreshold :: Opt.Parser (Maybe PBftSignatureThreshold)
+  cliPBftSignatureThreshold = Opt.optional $ Opt.option (PBftSignatureThreshold <$> Opt.auto) $
     Opt.long "pbft-threshold" <>
     Opt.metavar "DOUBLE" <>
-    -- FIXME ouroboros-consensus should export defaultPBftSignatureThreshold
-    -- That'd be better than putting this magic number here.
-    Opt.value (PBftSignatureThreshold 0.22) <>
     Opt.help "PBft signature threshold"
 
   cliByronOptions :: Opt.Parser (Maybe ByronOptions)
@@ -522,7 +519,7 @@ main = do
                 (Cardano.ApplicationName (fromString "cardano-byron-proxy")) 2
               protocolInfo = protocolInfoByron
                 newGenesisConfig
-                (Just (bpoPBftSignatureThreshold bpo))
+                (bpoPBftSignatureThreshold bpo)
                 protocolVersion
                 softwareVersion
                 Nothing
