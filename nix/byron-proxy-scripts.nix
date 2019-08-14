@@ -17,13 +17,14 @@ let
     config = {
       proxyHost = "127.0.0.1";
       proxyPort = 7777;
+      nodeId = null;
       topologyFile = mkTopology envConfig.relays;
       loggingConfig = ../cfg/logging.yaml;
       pbftThreshold = null;
     } // envConfig
       // customConfig;
   in with config; pkgs.writeScript "byron-proxy-${environment}" ''
-    exec ${byronProxy}/bin/cardano-byron-proxy +RTS -T -RTS --database-path db-byron-proxy-${environment} --index-path index-byron-proxy-${environment} --configuration-file ${configuration}/lib/configuration.yaml --configuration-key ${envConfig.confKey} --topology ${topologyFile} --logger-config ${loggingConfig} --local-addr [${proxyHost}]:${toString proxyPort} ${lib.optionalString (pbftThreshold != null) "--pbft-threshold ${pbftThreshold}"}
+    exec ${byronProxy}/bin/cardano-byron-proxy +RTS -T -RTS --database-path db-byron-proxy-${environment} --index-path index-byron-proxy-${environment} --configuration-file ${configuration}/lib/configuration.yaml --configuration-key ${envConfig.confKey} --topology ${topologyFile} --logger-config ${loggingConfig} --local-addr [${proxyHost}]:${toString proxyPort} ${lib.optionalString (pbftThreshold != null) "--pbft-threshold ${pbftThreshold}"} ${lib.optionalString (nodeId != null) "--node-id ${nodeId}"}
   '';
   configuration = cardanoConfig;
 
