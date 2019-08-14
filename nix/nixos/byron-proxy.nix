@@ -17,8 +17,12 @@ in {
       default = 7777;
     };
     proxyHost = mkOption {
-      type = types.string;
+      type = types.str;
       default = "127.0.0.1";
+    };
+    nodeId = mkOption {
+      type = types.nullOr types.str;
+      default = null;
     };
     topologyFile = mkOption {
       type = types.nullOr types.path;
@@ -47,7 +51,7 @@ in {
       wantedBy = [ "multi-user.target" ];
       script = let
         customConfig = {
-          inherit (cfg) proxyHost proxyPort;
+          inherit (cfg) proxyHost proxyPort nodeId;
         } // lib.optionalAttrs (cfg.topologyFile != null) { inherit (cfg) topologyFile; };
         byronScripts = (import ../.. { inherit customConfig; }).scripts.byron;
       in ''${byronScripts.proxy.${cfg.environment}}'';
