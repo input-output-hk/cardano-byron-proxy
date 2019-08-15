@@ -61,64 +61,53 @@ download tracer genesisBlock epochSlots db bp k = getStdGen >>= mainLoop Nothing
 
   waitForNext
     :: Maybe (BestTip CSL.BlockHeader)
-    -> STM (Either (BestTip CSL.BlockHeader) Atom)
+    -> STM (BestTip CSL.BlockHeader)
   waitForNext mBt = do
     mBt' <- bestTip bp
     if mBt == mBt'
-    -- If recvAtom retries then the whole STM will retry and we'll check again
-    -- for the best tip to have changed.
-    then fmap Right (recvAtom bp)
+    then retry
     else case mBt' of
+        -- Should be impossible, since it never goes from Just back to Nothing,
+        -- and we'd only pass the first retry if mBt is Just.
         Nothing -> retry
-        Just bt -> pure (Left bt)
+        Just bt -> pure bt
 
   mainLoop :: Maybe (BestTip CSL.BlockHeader) -> StdGen -> IO x
   mainLoop mBt rndGen = do
     -- Wait until the best tip has changed from the last one we saw. That can
     -- mean the header changed and/or the list of peers who announced it
     -- changed.
-    next <- atomically $ waitForNext mBt
-    case next of
-      -- TODO we don't get to know from where it was received. Problem? Maybe
-      -- not.
-      Right atom -> do
-        traceWith tracer $ mconcat
-          [ "Got atom: "
-          , Text.fromString (show atom)
-          ]
-        mainLoop mBt rndGen
-      Left bt -> do
-        mTip <- ChainDB.getTipHeader db
-        tipHash <- case mTip of
-          -- If the DB is empty, we use the genesis hash as our tip, but also
-          -- we need to put the genesis block into the database, because the
-          -- Byron peer _will not serve it to us_!
-          Nothing -> do
-            traceWith tracer "Seeding database with genesis"
-            genesisBlock' :: Block cfg <- recodeBlockOrFail epochSlots throwIO (Left genesisBlock)
-            ChainDB.addBlock db genesisBlock'
-            pure $ CSL.headerHash genesisBlock
-          Just header -> pure $ coerceHashToLegacy (headerHash header)
-        -- Pick a peer from the list of announcers at random and download
-        -- the chain.
-        let (peer, rndGen') = pickRandom rndGen (btPeers bt)
-            remoteTipHash = CSL.headerHash (btTip bt)
-        traceWith tracer $ mconcat
-          [ "Attempting to download chain with hash "
-          , Text.fromString (show remoteTipHash)
-          , " from "
-          , Text.fromString (show peer)
-          ]
-        -- Try to download the chain, but do not die in case of IOExceptions.
-        _ <- downloadChain
-               bp
-               peer
-               remoteTipHash
-               [tipHash]
-               streamer
-          `catch`
-          exceptionHandler
-        mainLoop (Just bt) rndGen'
+    bt <- atomically $ waitForNext mBt
+    mTip <- ChainDB.getTipHeader db
+    tipHash <- case mTip of
+      -- If the DB is empty, we use the genesis hash as our tip, but also
+      -- we need to put the genesis block into the database, because the
+      -- Byron peer _will not serve it to us_!
+      Nothing -> do
+        traceWith tracer "Seeding database with genesis"
+        genesisBlock' :: Block cfg <- recodeBlockOrFail epochSlots throwIO (Left genesisBlock)
+        ChainDB.addBlock db genesisBlock'
+        pure $ CSL.headerHash genesisBlock
+      Just header -> pure $ coerceHashToLegacy (headerHash header)
+    -- Pick a peer from the list of announcers at random and download
+    -- the chain.
+    let (peer, rndGen') = pickRandom rndGen (btPeers bt)
+    traceWith tracer $ mconcat
+      [ "Attempting to download chain with hash "
+      , Text.fromString (show tipHash)
+      , " from "
+      , Text.fromString (show peer)
+      ]
+    -- Try to download the chain, but do not die in case of IOExceptions.
+    _ <- downloadChain
+           bp
+           peer
+           (CSL.headerHash (btTip bt))
+           [tipHash]
+           streamer
+      `catch`
+      exceptionHandler
+    mainLoop (Just bt) rndGen'
 
   -- If it ends at an EBB, the EBB will _not_ be written. The tip will be the
   -- parent of the EBB.

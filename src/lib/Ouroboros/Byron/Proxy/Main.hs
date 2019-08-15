@@ -130,14 +130,6 @@ data ByronProxyConfig = ByronProxyConfig
   , bpcEpochSlots      :: !EpochSlots
   , bpcNetworkConfig   :: !(NetworkConfig KademliaParams)
   , bpcDiffusionConfig :: !FullDiffusionConfiguration
-    -- | Size of the send queue. Sending atomic (non-block data) to Byron
-    -- will block if this queue is full.
-  , bpcSendQueueSize   :: !Natural
-    -- | Size of the recv queue.
-    -- TODO should probably let it be unlimited, since there is no backpressure
-    -- in the Byron diffusion layer anyway, so failing to clear this queue
-    -- will still cause a memory leak.
-  , bpcRecvQueueSize   :: !Natural
   }
 
 -- | Interface presented by the Byron proxy.
@@ -171,11 +163,6 @@ data ByronProxy = ByronProxy
     -- request it, which will be served by some database, so the blocks for
     -- this chain should be in it.
   , announceChain :: Byron.Legacy.MainBlockHeader -> IO ()
-    -- | Take the next atom from the Byron network (non-block data).
-  , recvAtom      :: STM Atom
-    -- | Send an atom to the Byron network. It's in STM because the send is
-    -- performed asynchronously.
-  , sendAtom      :: Atom -> STM ()
   }
 
 taggedKeyValNoOp
@@ -345,44 +332,6 @@ fromByronTxAux txAux = case Binary.decodeFullAnnotatedBytes "TxAux" decoder cslB
     cslBytes = CSL.serialize txAux
     decoder :: Decoder s (Cardano.ATxAux Binary.ByteSpan)
     decoder  = Binary.fromCBOR
-
--- | Atoms are data which are not blocks.
-data Atom where
-  Transaction    :: TxMsgContents -> Atom
-  UpdateProposal :: (UpdateProposal, [UpdateVote]) -> Atom
-  UpdateVote     :: UpdateVote -> Atom
-  Commitment     :: MCCommitment -> Atom
-  Opening        :: MCOpening -> Atom
-  Shares         :: MCShares -> Atom
-  VssCertificate :: MCVssCertificate -> Atom
-  Delegation     :: ProxySKHeavy -> Atom
-
-deriving instance Show Atom
-
--- To get atoms from Shelley to Byron we put them into the pool and then
--- send them using the diffusion layer.
---
--- To get them from Byron to Shelley we use the relay mechanism built in to
--- the diffusion layer: it will put the thing into the relevant pool, then
--- make and deposit an `Atom` into a queue.
-
-sendAtomToByron :: Diffusion IO -> Atom -> IO ()
-sendAtomToByron diff atom = case atom of
-
-  Transaction tx -> void $ sendTx diff (getTxMsgContents tx)
-
-  UpdateProposal (up, uvs) -> sendUpdateProposal diff (hash up) up uvs
-  UpdateVote uv            -> sendVote diff uv
-
-  Opening (MCOpening sid opening)      -> sendSscOpening diff sid opening
-  Shares (MCShares sid shares)         -> sendSscShares diff sid shares
-  VssCertificate (MCVssCertificate vc) -> sendSscCert diff (getCertId vc) vc
-  Commitment (MCCommitment commitment) -> sendSscCommitment diff sid commitment
-    where
-    (pk, _, _) = commitment
-    sid = addressHash pk
-
-  Delegation psk -> sendPskHeavy diff psk
 
 -- | Information about the best tip from the Byron network.
 data BestTip tip = BestTip
@@ -713,13 +662,6 @@ withByronProxy trace bpc idx db mempool k = do
     -- never go from `Just` to `Nothing`, it only starts as `Nothing`.
     tipsTVar :: TVar (Maybe (BestTip Byron.Legacy.BlockHeader)) <- newTVarIO Nothing
 
-    -- Send and receive bounded queues for atomic data (non-block).
-    -- The receive queue is populated by the relay system by way of the logic
-    -- layer. The send queue is emptied by a thread spawned here which uses
-    -- the diffusion layer to send (ultimately by way of the outbound queue).
-    atomRecvQueue :: TBQueue Atom <- newTBQueueIO (bpcRecvQueueSize bpc)
-    atomSendQueue :: TBQueue Atom <- newTBQueueIO (bpcSendQueueSize bpc)
-
     -- Associates Byron transaction identifiers (their hashes) with Shelley
     -- mempool ticket numbers. Needed because the Byron relay system is
     -- random access by TxId.
@@ -731,8 +673,6 @@ withByronProxy trace bpc idx db mempool k = do
           { bestTip = takeBestTip
           , downloadChain = streamBlocks diff
           , announceChain = announceBlockHeader diff
-          , recvAtom = readTBQueue atomRecvQueue
-          , sendAtom = writeTBQueue atomSendQueue
           }
 
         epochSlots :: EpochSlots
@@ -741,19 +681,10 @@ withByronProxy trace bpc idx db mempool k = do
         takeBestTip :: STM (Maybe (BestTip Byron.Legacy.BlockHeader))
         takeBestTip = readTVar tipsTVar
 
-        -- FIXME this probably isn't necessary anymore.
-        -- Transactions are sent indirectly, by adding them to the mempool
-        sendingThread :: forall x . Diffusion IO -> IO x
-        sendingThread diff = do
-          atom <- atomically $ readTBQueue atomSendQueue
-          sendAtomToByron diff atom
-          sendingThread diff
-
         background :: forall x . Diffusion IO -> IO x
         background diff = fmap (\(x, _) -> x) $
-          concurrently (sendingThread diff) $
-            concurrently (sendTxsFromMempool mempool diff)
-                         (updateMempoolIdMap mempool txTicketMapVar)
+          concurrently (sendTxsFromMempool mempool diff)
+                       (updateMempoolIdMap mempool txTicketMapVar)
 
         blockDecodeError :: forall x . Text -> IO x
         blockDecodeError text = throwIO $ MalformedBlock text

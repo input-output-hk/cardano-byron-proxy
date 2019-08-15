@@ -403,8 +403,6 @@ runByron tracer byronOptions genesisConfig _ epochSlots idx db mempool = do
               , CSL.fdcStreamWindow = CSL.streamWindow
               , CSL.fdcBatchSize    = 64
               }
-          , bpcSendQueueSize     = 1
-          , bpcRecvQueueSize     = 1
           }
         genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
                                          (CSL.configGenesisHash genesisConfig)
