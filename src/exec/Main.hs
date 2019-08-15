@@ -19,7 +19,7 @@ import Control.Monad.Trans.Except (runExceptT)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import Data.Functor.Contravariant (Op (..))
 import Data.List (intercalate)
-import qualified Data.Reflection as Reflection (give)
+import qualified Data.Reflection as Reflection (give, given)
 import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -39,17 +39,15 @@ import qualified Cardano.Chain.Update as Cardano
 import qualified Cardano.Crypto as Cardano
 
 import qualified Pos.Chain.Block as CSL (genesisBlock0)
-import qualified Pos.Chain.Block as CSL (recoveryHeadersMessage, streamWindow,
-                                         withBlockConfiguration)
+import qualified Pos.Chain.Block as CSL (BlockConfiguration, withBlockConfiguration)
 import qualified Pos.Chain.Delegation as CSL
 import qualified Pos.Chain.Lrc as CSL (genesisLeaders)
 import qualified Pos.Chain.Genesis as CSL.Genesis (Config)
 import qualified Pos.Chain.Genesis as CSL
 import qualified Pos.Chain.Update as CSL
 import qualified Pos.Chain.Ssc as CSL (withSscConfiguration)
-import qualified Pos.Configuration as CSL (networkConnectionTimeout, withNodeConfiguration)
+import qualified Pos.Configuration as CSL (NodeConfiguration, withNodeConfiguration)
 import qualified Pos.Crypto as CSL
-import qualified Pos.Diffusion.Full as CSL (FullDiffusionConfiguration (..))
 
 import qualified Pos.Infra.Network.CLI as CSL (NetworkConfigOpts (..),
                                                externalNetworkAddressOption,
@@ -59,8 +57,7 @@ import qualified Pos.Infra.Network.CLI as CSL (NetworkConfigOpts (..),
 import Pos.Infra.Network.Types (NetworkConfig (..))
 import qualified Pos.Infra.Network.Policy as Policy
 import qualified Pos.Launcher.Configuration as CSL (Configuration (..),
-                                                    ConfigurationOptions (..),
-                                                    HasConfigurations)
+                                                    ConfigurationOptions (..))
 import qualified Pos.Client.CLI.Options as CSL (configurationOptionsParser)
 import qualified Pos.Util.Config as CSL (parseYamlConfig)
 
@@ -364,46 +361,38 @@ runShelleyClient producerAddrs _ ctable iversions = do
     )
 
 runByron
-  :: ( CSL.HasConfigurations, ByronGiven )
+  :: ( ByronGiven )
   => Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
   -> ByronOptions
   -> CSL.Genesis.Config
-  -> Cardano.ProtocolMagicId
+  -> CSL.BlockConfiguration
+  -> CSL.UpdateConfiguration
+  -> CSL.NodeConfiguration
   -> Cardano.EpochSlots
   -> Index IO (Header (Block ByronConfig))
   -> ChainDB IO (Block ByronConfig)
   -> Mempool IO (Block ByronConfig) TicketNo
   -> IO ()
-runByron tracer byronOptions genesisConfig _ epochSlots idx db mempool = do
+runByron tracer byronOptions genesisConfig blockConfig updateConfig nodeConfig epochSlots idx db mempool = do
     let cslTrace = mkCSLTrace tracer
+        trace = Trace.appendName "diffusion" cslTrace
     -- Get the `NetworkConfig` from the options
     networkConfig <- CSL.intNetworkConfigOpts
       (Trace.named cslTrace)
       (boNetworkOptions byronOptions)
-    let bpc :: ByronProxyConfig
-        bpc = ByronProxyConfig
-          { bpcAdoptedBVData = CSL.configBlockVersionData genesisConfig
-            -- ^ Hopefully that never needs to change.
-          , bpcEpochSlots = epochSlots
-          , bpcNetworkConfig = networkConfig
-              { ncEnqueuePolicy = Policy.defaultEnqueuePolicyRelay
-              , ncDequeuePolicy = Policy.defaultDequeuePolicyRelay
-              }
-            -- ^ These default relay policies should do what we want.
-            -- If not, could give a --policy option and use yaml files as in
-            -- cardano-sl
-          , bpcDiffusionConfig = CSL.FullDiffusionConfiguration
-              { CSL.fdcProtocolMagic = CSL.configProtocolMagic genesisConfig
-              , CSL.fdcProtocolConstants = CSL.configProtocolConstants genesisConfig
-              , CSL.fdcRecoveryHeadersMessage = CSL.recoveryHeadersMessage
-              , CSL.fdcLastKnownBlockVersion = CSL.lastKnownBlockVersion CSL.updateConfiguration
-              , CSL.fdcConvEstablishTimeout = CSL.networkConnectionTimeout
-              -- Diffusion layer logs will have "diffusion" in their names.
-              , CSL.fdcTrace = Trace.appendName "diffusion" cslTrace
-              , CSL.fdcStreamWindow = CSL.streamWindow
-              , CSL.fdcBatchSize    = 64
-              }
+    let networkConfig' = networkConfig
+          { ncEnqueuePolicy = Policy.defaultEnqueuePolicyRelay
+          , ncDequeuePolicy = Policy.defaultDequeuePolicyRelay
           }
+        bpc :: ByronProxyConfig
+        bpc = configFromCSLConfigs
+                genesisConfig
+                blockConfig
+                updateConfig
+                nodeConfig
+                networkConfig'
+                64 -- Batch size.
+                trace
         genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
                                          (CSL.configGenesisHash genesisConfig)
                                          (CSL.genesisLeaders genesisConfig)
@@ -556,7 +545,9 @@ main = do
                       (Logging.convertTrace' trace)
                       bopts
                       oldGenesisConfig
-                      protocolMagic
+                      (Reflection.given :: CSL.BlockConfiguration)
+                      (Reflection.given :: CSL.UpdateConfiguration)
+                      (Reflection.given :: CSL.NodeConfiguration)
                       epochSlots
                       idx
                       cdb

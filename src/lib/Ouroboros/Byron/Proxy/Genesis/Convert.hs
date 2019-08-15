@@ -40,6 +40,9 @@ import qualified Pos.Crypto as CSL
 convertHash :: CSL.AbstractHash algo a -> Cardano.AbstractHash algo b
 convertHash (CSL.AbstractHash it) = Cardano.AbstractHash it
 
+convertEpochSlots :: CSL.SlotCount -> Cardano.EpochSlots
+convertEpochSlots = Cardano.EpochSlots . fromIntegral
+
 convertRequiresNetworkMagic :: CSL.RequiresNetworkMagic -> Cardano.RequiresNetworkMagic
 convertRequiresNetworkMagic rnm = case rnm of
   CSL.RequiresNoMagic -> Cardano.RequiresNoMagic

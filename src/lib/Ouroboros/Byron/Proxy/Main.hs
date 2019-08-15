@@ -9,7 +9,23 @@
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
-module Ouroboros.Byron.Proxy.Main where
+{-|
+Module      : Ouroboros.Byron.Proxy.Main
+Description : Definition of the Byron proxy interface and implementation.
+
+The 'ByronProxy' type gives the interface to a Byron network.
+'withByronProxy' will create one, allowing the caller to see the tips-of-chains
+of its Byron peers, to download one of these chains, and to announce its own
+tip-of-chain header to its peers.
+-}
+
+module Ouroboros.Byron.Proxy.Main
+  ( ByronProxyConfig (..)
+  , configFromCSLConfigs
+  , ByronProxy (..)
+  , withByronProxy
+  , BestTip (..)
+  ) where
 
 import           Codec.CBOR.Decoding                       (Decoder)
 import qualified Codec.CBOR.Write                          as CBOR (toLazyByteString)
@@ -122,15 +138,60 @@ import qualified Ouroboros.Network.TxSubmission.Outbound   as Tx.Out
 import           Ouroboros.Storage.ChainDB.API             (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API             as ChainDB
 
--- | Definitions required in order to run the Byron proxy.
+-- | Configuration used to get a 'ByronProxy'.
+-- 'configFromGenesis' will make one from a genesis configuration.
 data ByronProxyConfig = ByronProxyConfig
-  { -- TODO see if we can't derive the block version data from the database.
-    bpcAdoptedBVData   :: !BlockVersionData
+  { -- | The Byron Logic layer needs the BlockVersionData. Technically this
+    -- is not constant over a whole blockchain: it can be changed by an update.
+    -- However, in cardano-byron-proxy it is only used to determine message
+    -- size limits on Byron protocols, so as long as header, block, and tx
+    -- size limits do not change, it's ok.
+    --
+    -- To get a BlockVersionData,
+    -- Pos.Chain.Genesis.Config.configBlockVersionData can be used on a Byron
+    -- genesis configuration.
+    bpcAdoptedBVData     :: !BlockVersionData
     -- | Number fo slots per epoch. Assumed to never change.
-  , bpcEpochSlots      :: !EpochSlots
-  , bpcNetworkConfig   :: !(NetworkConfig KademliaParams)
-  , bpcDiffusionConfig :: !FullDiffusionConfiguration
+  , bpcEpochSlots        :: !EpochSlots
+    -- | Byron network configuration. To get one, consider using
+    -- Pos.Infra.Network.CLI.intNetworkConfigOpts
+  , bpcNetworkConfig     :: !(NetworkConfig KademliaParams)
+    -- | Configuration for the Byron Diffusion layer (i.e. the network part).
+  , bpcDiffusionConfig   :: !FullDiffusionConfiguration
   }
+
+-- | Make a 'ByronProxyConfig' using cardano-sl configuration types.
+-- This will ensure that the proxy is configured in such a way that it is
+-- able to communicate with a Byron peer using the same config.
+configFromCSLConfigs
+  :: CSL.Genesis.Config
+  -> CSL.BlockConfiguration
+  -> CSL.UpdateConfiguration
+  -> CSL.NodeConfiguration
+  -> NetworkConfig KademliaParams
+  -> Word32 -- ^ Batch size for block streaming.
+  -> Trace IO (LogNamed (Wlog.Severity, Text))
+  -> ByronProxyConfig
+configFromCSLConfigs genesisConfig blockConfig updateConfig nodeConfig networkConfig batchSize trace = ByronProxyConfig
+  { bpcAdoptedBVData   = CSL.Genesis.configBlockVersionData genesisConfig
+  , bpcEpochSlots      = epochSlots
+  , bpcNetworkConfig   = networkConfig
+  , bpcDiffusionConfig = FullDiffusionConfiguration
+      { fdcProtocolMagic          = CSL.Genesis.configProtocolMagic genesisConfig
+      , fdcProtocolConstants      = CSL.Genesis.configProtocolConstants genesisConfig
+        -- fromIntergal :: Int -> Word
+      , fdcRecoveryHeadersMessage = fromIntegral $ CSL.ccRecoveryHeadersMessage blockConfig
+      , fdcLastKnownBlockVersion  = CSL.lastKnownBlockVersion updateConfig
+      , fdcConvEstablishTimeout   = timeout
+        -- fromIntegral :: Int -> Word32
+      , fdcStreamWindow           = fromIntegral $ CSL.ccStreamWindow blockConfig
+      , fdcBatchSize              = batchSize
+      , fdcTrace                  = trace
+      }
+  }
+  where
+  epochSlots = convertEpochSlots (CSL.Genesis.configEpochSlots genesisConfig)
+  timeout = fromMicroseconds (1000 * fromIntegral (CSL.ccNetworkConnectionTimeout nodeConfig))
 
 -- | Interface presented by the Byron proxy.
 data ByronProxy = ByronProxy
@@ -160,8 +221,9 @@ data ByronProxy = ByronProxy
                   -> StreamBlocks Byron.Legacy.Block IO t
                   -> IO (Maybe t)
     -- | Make Byron peers aware of this chain. It's expected that they will
-    -- request it, which will be served by some database, so the blocks for
-    -- this chain should be in it.
+    -- request it if it's better than their own, and the download will be
+    -- served by a backing ChainDB, so the blocks for this chain should be in
+    -- it.
   , announceChain :: Byron.Legacy.MainBlockHeader -> IO ()
   }
 
