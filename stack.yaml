@@ -129,6 +129,7 @@ extra-deps:
 
 ghc-options:
   cardano-byron-proxy:     -Wall -Werror -Wcompat -fwarn-redundant-constraints -fwarn-incomplete-patterns -fwarn-unused-imports -Wincomplete-record-updates -Wincomplete-uni-patterns
-
+  "$everything": -O2
+ 
 nix:
   shell-file: nix/stack-shell.nix
