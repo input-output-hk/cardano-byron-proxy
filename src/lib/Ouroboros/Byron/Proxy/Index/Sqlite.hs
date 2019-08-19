@@ -55,10 +55,11 @@ index
   -> Sql.Statement -- for insert
   -> Index IO (Header ByronBlock)
 index epochSlots tracer conn insertStatement = Index
-  { Index.lookup = sqliteLookup epochSlots conn
-  , tip          = sqliteTip epochSlots conn
-  , rollforward  = sqliteRollforward epochSlots tracer insertStatement
-  , rollbackward = sqliteRollbackward epochSlots tracer conn
+  { Index.lookup  = sqliteLookup epochSlots conn
+  , tip           = sqliteTip epochSlots conn
+  , streamFromTip = sqliteStreamFromTip epochSlots conn
+  , rollforward   = sqliteRollforward epochSlots tracer insertStatement
+  , rollbackward  = sqliteRollbackward epochSlots tracer conn
   }
 
 -- | Open a new or existing SQLite database. If new, it will set up the schema.
@@ -157,6 +158,24 @@ createTable conn = Sql.execute_ conn sql_create_table
 createIndex :: Sql.Connection -> IO ()
 createIndex conn = Sql.execute_ conn sql_create_index
 
+convertHashBlob :: ByteString -> IO HeaderHash
+convertHashBlob blob = case digestFromByteString blob of
+  Just hh -> pure (AbstractHash hh)
+  Nothing -> throwIO $ InvalidHash blob
+
+-- | Convert the database encoding of relative slot to the offset in an
+-- epoch. The header hash is taken for error-reporting purposes.
+offsetInEpoch :: HeaderHash -> Int -> IO Word64
+offsetInEpoch hh i
+  | i == -1 = pure 0
+  | i >= 0  = pure $ fromIntegral i
+  | otherwise = throwIO $ InvalidRelativeSlot hh i
+
+toAbsoluteSlot :: EpochSlots -> HeaderHash -> Word64 -> Int -> IO SlotNo
+toAbsoluteSlot epochSlots hh epochNo slotInt = do
+  offset <- offsetInEpoch hh slotInt
+  pure $ SlotNo $ unEpochSlots epochSlots * epochNo + offset
+
 -- | The tip is the entry with the highest epoch and slot pair.
 sql_get_tip :: Query
 sql_get_tip =
@@ -169,17 +188,35 @@ sqliteTip epochSlots conn = do
    case rows of
      [] -> pure Origin
      ((hhBlob, epoch, slotInt) : _) -> do
-       hh <- case digestFromByteString hhBlob of
-         Just hh -> pure (AbstractHash hh)
-         Nothing -> throwIO $ InvalidHash hhBlob
-       offsetInEpoch :: Word64 <-
-         if slotInt == -1
-         then pure 0
-         else if slotInt >= 0
-         then pure $ fromIntegral slotInt
-         else throwIO $ InvalidRelativeSlot hh slotInt
-       let slotNo = SlotNo $ unEpochSlots epochSlots * epoch + offsetInEpoch
+       hh <- convertHashBlob hhBlob
+       slotNo <- toAbsoluteSlot epochSlots hh epoch slotInt
        pure $ At $ Point.Block slotNo (ByronHash hh)
+
+sql_get_all :: Query
+sql_get_all =
+  "SELECT header_hash, epoch, slot FROM block_index\
+  \ ORDER BY epoch DESC, slot DESC;"
+
+-- | Stream rows from the tip by using the prepared statement and nextRow
+-- API.
+sqliteStreamFromTip
+  :: EpochSlots
+  -> Sql.Connection
+  -> Index.Fold (Header ByronBlock) t
+  -> IO t
+sqliteStreamFromTip epochSlots conn fold = Sql.withStatement conn sql_get_all $ \stmt ->
+    go stmt fold
+  where
+    go stmt step = case step of
+      Index.Stop t -> pure t
+      Index.More t k -> do
+        next <- Sql.nextRow stmt
+        case next of
+          Nothing -> pure t
+          Just (hhBlob, epoch, slotInt) -> do
+            hh <- convertHashBlob hhBlob
+            slotNo <- toAbsoluteSlot epochSlots hh epoch slotInt
+            go stmt (k slotNo (ByronHash hh))
 
 sql_get_hash :: Query
 sql_get_hash =
@@ -194,13 +231,8 @@ sqliteLookup epochSlots conn (ByronHash hh@(AbstractHash digest)) = do
   case rows of
     [] -> pure Nothing
     ((epoch, slotInt) : _) -> do
-      offsetInEpoch :: Word64 <-
-        if slotInt == -1
-        then pure 0
-        else if slotInt >= 0
-        then pure $ fromIntegral slotInt
-        else throwIO $ InvalidRelativeSlot hh slotInt
-      pure $ Just $ SlotNo $ unEpochSlots epochSlots * epoch + offsetInEpoch
+      slotNo <- toAbsoluteSlot epochSlots hh epoch slotInt
+      pure $ Just slotNo
 
 -- | Note that there is a UNIQUE constraint. This will fail if a duplicate
 -- entry is inserted.
