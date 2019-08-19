@@ -77,6 +77,9 @@ import Ouroboros.Consensus.BlockchainTime (SlotLength (..), SystemStart (..), re
 import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import Ouroboros.Consensus.Mempool.API (Mempool)
+import Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
+import Ouroboros.Consensus.Node (getMempool)
 import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..))
 import Ouroboros.Consensus.Node.ProtocolInfo.Byron (PBftSignatureThreshold (..),
            protocolInfoByron)
@@ -366,8 +369,9 @@ runByron
   -> Cardano.EpochSlots
   -> Index IO (Header (Block ByronConfig))
   -> ChainDB IO (Block ByronConfig)
+  -> Mempool IO (Block ByronConfig) TicketNo
   -> IO ()
-runByron tracer byronOptions genesisConfig _ epochSlots idx db = do
+runByron tracer byronOptions genesisConfig _ epochSlots idx db mempool = do
     let cslTrace = mkCSLTrace tracer
     -- Get the `NetworkConfig` from the options
     networkConfig <- CSL.intNetworkConfigOpts
@@ -396,16 +400,13 @@ runByron tracer byronOptions genesisConfig _ epochSlots idx db = do
               , CSL.fdcStreamWindow = CSL.streamWindow
               , CSL.fdcBatchSize    = 64
               }
-            -- 40 seconds.
-            -- TODO configurable for these 3.
-          , bpcPoolRoundInterval = 40000000
           , bpcSendQueueSize     = 1
           , bpcRecvQueueSize     = 1
           }
         genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
                                          (CSL.configGenesisHash genesisConfig)
                                          (CSL.genesisLeaders genesisConfig)
-    withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc idx db $ \bp ->
+    withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc idx db mempool $ \bp ->
       byronClient genesisBlock bp
 
   where
@@ -534,7 +535,7 @@ main = do
           btime <- realBlockchainTime treg slotDuration systemStart
           withDB dbc dbTracer indexTracer treg securityParam nodeConfig extLedgerState $ \idx cdb -> do
             traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
-            Shelley.withVersions treg cdb nodeConfig nodeState btime $ \ctable iversions rversions -> do
+            Shelley.withShelley treg cdb nodeConfig nodeState btime $ \kernel ctable iversions rversions -> do
               let server = runShelleyServer (soLocalAddress      (bpoShelleyOptions bpo)) treg ctable rversions
                   client = runShelleyClient (soProducerAddresses (bpoShelleyOptions bpo)) treg ctable iversions
                   byron  = case bpoByronOptions bpo of
@@ -547,5 +548,6 @@ main = do
                       epochSlots
                       idx
                       cdb
+                      (getMempool kernel)
               _ <- concurrently (concurrently server client) byron
               pure ()
