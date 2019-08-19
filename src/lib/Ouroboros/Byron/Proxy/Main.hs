@@ -171,22 +171,10 @@ txKeyValFromMempool mempool txTicketMapVar = KeyVal
     { toKey = pure . tagWith ptag . keyFromValue
     -- Peer offers this transaction. Give True if we don't have it (we want it)
     -- and False otherwise.
-    , handleInv = \txId -> atomically $ do
-        snapshot <- Tx.Out.mempoolGetSnapshot reader
-        ticketMap <- readTVar txTicketMapVar
-        let outcome = do
-              ticketNo <- Map.lookup (untag txId) ticketMap
-              Tx.Out.mempoolLookupTx snapshot ticketNo
-        pure $ maybe True (const False) outcome
+    , handleInv = fmap (maybe True (const False)) . lookupTx
     -- Peer requests this transaction. Give Nothing if we don't have it, and
     -- Just if we do.
-    , handleReq = \txId -> atomically $ do
-        snapshot <- Tx.Out.mempoolGetSnapshot reader
-        ticketMap <- readTVar txTicketMapVar
-        let outcome = do
-              ticketNo <- Map.lookup (untag txId) ticketMap
-              Tx.Out.mempoolLookupTx snapshot ticketNo
-        pure $ fmap toByronTxMsgContents outcome
+    , handleReq = lookupTx
     -- Peer gave us this transaction. Put it into the pool and give False to
     -- mean it should _not_ be relayed.
     , handleData = \txMsgContents -> do
@@ -195,8 +183,7 @@ txKeyValFromMempool mempool txTicketMapVar = KeyVal
         outcome <- Tx.In.mempoolAddTxs writer [tx]
         case outcome of
           []          -> pure False
-          -- Relay if it was added, and remember the ticket number of the
-          -- transaction id.
+          -- Relay if it was added.
           (txid' : _) -> pure (txid == txid')
     }
   where
@@ -208,6 +195,14 @@ txKeyValFromMempool mempool txTicketMapVar = KeyVal
     reader = getMempoolReader mempool
     writer :: Tx.In.TxSubmissionMempoolWriter (GenTxId (Block cfg)) (GenTx (Block cfg)) TicketNo IO
     writer = getMempoolWriter mempool
+    lookupTx :: Tagged TxMsgContents TxId -> IO (Maybe TxMsgContents)
+    lookupTx = \txId -> atomically $ do
+      snapshot <- Tx.Out.mempoolGetSnapshot reader
+      ticketMap <- readTVar txTicketMapVar
+      let outcome = do
+            ticketNo <- Map.lookup (untag txId) ticketMap
+            Tx.Out.mempoolLookupTx snapshot ticketNo
+      pure $ fmap toByronTxMsgContents outcome
 
 -- | Try to send every transaction found in the mempool out to the Byron
 -- network.
@@ -243,10 +238,10 @@ sendTxsFromMempool mempool diff = go (Mempool.zeroIdx mempool)
 -- | Keep a map from Byron transaction ids to ticket numbers in sync with the
 -- mempool. Of course there could be some lag depending on the scheduler.
 updateMempoolIdMap
-  :: forall cfg x .
+  :: forall cfg void .
      Mempool IO (Block cfg) TicketNo
   -> TVar (Map TxId TicketNo)
-  -> IO x
+  -> IO void
 updateMempoolIdMap mempool tvar = go [] (Mempool.zeroIdx mempool)
   where
     go currentTxs ticketNo = join $ atomically $ do
