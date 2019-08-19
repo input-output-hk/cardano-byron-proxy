@@ -13,13 +13,16 @@ module Byron
 
 import Control.Concurrent.STM (STM, atomically, check, readTVar, registerDelay, retry)
 import Control.Exception (IOException, catch, throwIO)
-import Control.Monad (forM_, when)
+import Control.Monad (when)
 import Control.Tracer (Tracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy (fromStrict)
+import Data.Foldable (foldlM)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
+import Data.Maybe (mapMaybe)
 import qualified Data.Text.Lazy.Builder as Text
 import Data.Typeable (Typeable)
+import Data.Word (Word64)
 import System.Random (StdGen, getStdGen, randomR)
 
 import qualified Cardano.Binary as Binary
@@ -28,70 +31,85 @@ import qualified Cardano.Chain.Slotting as Cardano
 
 import qualified Pos.Binary.Class as CSL (decodeFull, serialize)
 import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), GenesisBlock,
-                                         MainBlockHeader, headerHash)
+                                         MainBlockHeader, HeaderHash, headerHash)
 import qualified Pos.Infra.Diffusion.Types as CSL
 
 import Ouroboros.Byron.Proxy.Block (Block, ByronBlockOrEBB (..),
          coerceHashToLegacy, unByronHeaderOrEBB, headerHash)
 import Ouroboros.Byron.Proxy.Main
+import Ouroboros.Consensus.Block (Header)
 import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
+import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (maxRollbacks))
+import Ouroboros.Network.Block (ChainHash (..), Point, pointHash)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.ChainFragment as CF
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 -- | Download the best available chain from Byron peers and write to the
--- database, over and over again.
+-- database, over and over again. It will download the best chain from its
+-- Byron peers regardless of whether it has a better one in the database.
 --
--- No exception handling is done.
+-- The ByronGiven and Typeable constraints are needed in order to use
+-- AF.selectPoints, that's all.
 download
-  :: Tracer IO Text.Builder
+  :: forall cfg void .
+     ( ByronGiven, Typeable cfg )
+  => Tracer IO Text.Builder
   -> CSL.GenesisBlock -- ^ For use as checkpoint when DB is empty. Also will
                       -- be put into an empty DB.
                       -- Sadly, old Byron net API doesn't give any meaning to an
                       -- empty checkpoint set; it'll just fall over.
   -> Cardano.EpochSlots
+  -> SecurityParam
   -> ChainDB IO (Block cfg)
   -> ByronProxy
-  -> (CSL.Block -> Block cfg -> IO ())
-  -> IO x
-download tracer genesisBlock epochSlots db bp k = getStdGen >>= mainLoop Nothing
-
-  where
-
-  waitForNext
-    :: Maybe (BestTip CSL.BlockHeader)
-    -> STM (BestTip CSL.BlockHeader)
-  waitForNext mBt = do
-    mBt' <- bestTip bp
-    if mBt == mBt'
-    then retry
-    else case mBt' of
-        -- Should be impossible, since it never goes from Just back to Nothing,
-        -- and we'd only pass the first retry if mBt is Just.
-        Nothing -> retry
-        Just bt -> pure bt
-
-  mainLoop :: Maybe (BestTip CSL.BlockHeader) -> StdGen -> IO x
-  mainLoop mBt rndGen = do
-    -- Wait until the best tip has changed from the last one we saw. That can
-    -- mean the header changed and/or the list of peers who announced it
-    -- changed.
-    bt <- atomically $ waitForNext mBt
+  -> IO void
+download tracer genesisBlock epochSlots securityParam db bp = do
+    gen <- getStdGen
     mTip <- ChainDB.getTipHeader db
     tipHash <- case mTip of
-      -- If the DB is empty, we use the genesis hash as our tip, but also
-      -- we need to put the genesis block into the database, because the
-      -- Byron peer _will not serve it to us_!
       Nothing -> do
         traceWith tracer "Seeding database with genesis"
         genesisBlock' :: Block cfg <- recodeBlockOrFail epochSlots throwIO (Left genesisBlock)
         ChainDB.addBlock db genesisBlock'
         pure $ CSL.headerHash genesisBlock
       Just header -> pure $ coerceHashToLegacy (headerHash header)
+    mainLoop gen tipHash
+
+  where
+
+  -- The BestTip always gives the longest chain seen so far by Byron. All we
+  -- need to do here is wait until it actually changes, then try to download.
+  -- For checkpoints, we just need to choose some good ones up to k blocks
+  -- back, and everything should work out fine. NB: the checkpoints will only
+  -- be on the main chain.
+  -- getCurrentChain will give exactly what we need.
+  waitForNext
+    :: CSL.HeaderHash
+    -> STM (BestTip CSL.BlockHeader)
+  waitForNext lastDownloadedHash = do
+    mBt <- bestTip bp
+    case mBt of
+      -- Haven't seen any tips from Byron peers.
+      Nothing -> retry
+      Just bt ->
+          if thisHash == lastDownloadedHash
+          then retry
+          else pure bt
+        where
+          thisHash = CSL.headerHash (btTip bt)
+
+  mainLoop :: StdGen -> CSL.HeaderHash -> IO void
+  mainLoop rndGen tipHash = do
+    -- Wait until the best tip has changed from the last one we saw. That can
+    -- mean the header changed and/or the list of peers who announced it
+    -- changed.
+    bt <- atomically $ waitForNext tipHash
     -- Pick a peer from the list of announcers at random and download
     -- the chain.
     let (peer, rndGen') = pickRandom rndGen (btPeers bt)
+    chain <- atomically $ ChainDB.getCurrentChain db
     traceWith tracer $ mconcat
       [ "Attempting to download chain with hash "
       , Text.fromString (show tipHash)
@@ -99,43 +117,72 @@ download tracer genesisBlock epochSlots db bp k = getStdGen >>= mainLoop Nothing
       , Text.fromString (show peer)
       ]
     -- Try to download the chain, but do not die in case of IOExceptions.
-    _ <- downloadChain
-           bp
-           peer
-           (CSL.headerHash (btTip bt))
-           [tipHash]
-           streamer
+    -- The hash of the last downloaded block is returned, so that on the next
+    -- recursive call, that chain won't be downloaded again. If there's an
+    -- exception, or if batch downloaded was used, this hash may not be the
+    -- hash of the tip of the chain that was to be downloaded.
+    tipHash' <- downloadChain
+        bp
+        peer
+        (CSL.headerHash (btTip bt))
+        (checkpoints chain)
+        (streamer tipHash)
       `catch`
-      exceptionHandler
-    mainLoop (Just bt) rndGen'
+        exceptionHandler tipHash
+    mainLoop rndGen' tipHash'
 
-  -- If it ends at an EBB, the EBB will _not_ be written. The tip will be the
-  -- parent of the EBB.
-  -- This should be OK.
-  streamer :: CSL.StreamBlocks CSL.Block IO ()
-  streamer = CSL.StreamBlocks
+  checkpoints
+    :: AF.AnchoredFragment (Header (Block cfg))
+    -> [CSL.HeaderHash]
+  checkpoints = mapMaybe pointToHash . AF.selectPoints (fmap fromIntegral offsets)
+
+  pointToHash :: Point (Header (Block cfg)) -> Maybe CSL.HeaderHash
+  pointToHash pnt = case pointHash pnt of
+    GenesisHash    -> Nothing
+    BlockHash hash -> Just $ coerceHashToLegacy hash
+
+  -- Offsets for selectPoints. Defined in the same way as for the Shelley
+  -- chain sync client: fibonacci numbers including 0 and k.
+  offsets :: [Word64]
+  offsets = 0 : foldr includeK ([] {- this is never forced -}) (tail fibs)
+
+  includeK :: Word64 -> [Word64] -> [Word64]
+  includeK w ws | w >= k    = [k]
+                | otherwise = w : ws
+
+  fibs :: [Word64]
+  fibs = 1 : 1 : zipWith (+) fibs (tail fibs)
+
+  streamer :: CSL.HeaderHash -> CSL.StreamBlocks CSL.Block IO CSL.HeaderHash
+  streamer tipHash = CSL.StreamBlocks
     { CSL.streamBlocksMore = \blocks -> do
         -- List comes in newest-to-oldest order.
         let orderedBlocks = NE.toList (NE.reverse blocks)
         -- The blocks are legacy CSL blocks. To put them into the DB, we must
         -- convert them to new cardano-ledger blocks. That's done by
         -- encoding and decoding.
-        forM_ orderedBlocks $ \blk -> do
-          blk' <- recodeBlockOrFail epochSlots throwIO blk
-          ChainDB.addBlock db blk'
-          k blk blk'
-        pure streamer
-    , CSL.streamBlocksDone = pure ()
+        tipHash' <- foldlM commitBlock tipHash orderedBlocks
+        pure (streamer tipHash')
+    , CSL.streamBlocksDone = pure tipHash
     }
 
+  commitBlock :: CSL.HeaderHash -> CSL.Block -> IO CSL.HeaderHash
+  commitBlock _ blk = do
+    blk' <- recodeBlockOrFail epochSlots throwIO blk
+    ChainDB.addBlock db blk'
+    pure $ CSL.headerHash blk
+
   -- No need to trace it; cardano-sl libraries will do that.
-  exceptionHandler :: IOException -> IO (Maybe ())
-  exceptionHandler _ = pure Nothing
+  exceptionHandler :: CSL.HeaderHash -> IOException -> IO CSL.HeaderHash
+  exceptionHandler h _ = pure h
 
   pickRandom :: StdGen -> NonEmpty t -> (t, StdGen)
   pickRandom rndGen ne =
     let (idx, rndGen') = randomR (0, NE.length ne - 1) rndGen
     in  (ne NE.!! idx, rndGen')
+
+  k :: Word64
+  k = maxRollbacks securityParam
 
 recodeBlockOrFail
   :: Cardano.EpochSlots

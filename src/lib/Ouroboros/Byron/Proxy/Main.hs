@@ -209,17 +209,13 @@ data ByronProxy = ByronProxy
     -- Those data can be taken from 'bestTip', but of course may no longer be
     -- correct at the time of the call.
     --
-    -- TODO deal with the `Maybe t` in this type. Should it be there? It's
-    -- used to indicate whether streaming is available, for fallback to
-    -- batching.
-    --
     -- FIXME should not use legacy header hash type here.
   , downloadChain :: forall t .
                      NodeId
                   -> Byron.Legacy.HeaderHash   -- of tip to request
                   -> [Byron.Legacy.HeaderHash] -- of checkpoints
                   -> StreamBlocks Byron.Legacy.Block IO t
-                  -> IO (Maybe t)
+                  -> IO t
     -- | Make Byron peers aware of this chain. It's expected that they will
     -- request it if it's better than their own, and the download will be
     -- served by a backing ChainDB, so the blocks for this chain should be in
@@ -733,7 +729,19 @@ withByronProxy trace bpc idx db mempool k = do
     let byronProxy :: Diffusion IO -> ByronProxy
         byronProxy diff = ByronProxy
           { bestTip = takeBestTip
-          , downloadChain = streamBlocks diff
+          , downloadChain = \peer tipHash checkpointHashes sbK -> do
+              streamResult <- streamBlocks diff peer tipHash checkpointHashes sbK
+              case streamResult of
+                Just t  -> pure t
+                -- Nothing means streaming is not supported. Fall back to
+                -- batching. This will do one batch then finish the
+                -- StreamBlocks callback. That may not give all of the
+                -- blocks requested.
+                Nothing -> do
+                  batchResult <- getBlocks diff peer tipHash checkpointHashes
+                  case getOldestFirst batchResult of
+                    [] -> streamBlocksDone sbK
+                    (b : bs) -> streamBlocksMore sbK (b NE.:| bs) >>= streamBlocksDone
           , announceChain = announceBlockHeader diff
           }
 

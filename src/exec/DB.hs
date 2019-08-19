@@ -27,7 +27,8 @@ import qualified Ouroboros.Consensus.Ledger.Byron          as Byron
 import           Ouroboros.Consensus.Ledger.Byron.Config   (ByronConfig)
 import           Ouroboros.Consensus.Ledger.Extended       (ExtLedgerState)
 import           Ouroboros.Consensus.Protocol              (NodeConfig)
-import           Ouroboros.Consensus.Protocol.Abstract     (SecurityParam (..))
+import           Ouroboros.Consensus.Protocol.Abstract     (SecurityParam (..),
+                                                            protocolSecurityParam)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 import           Ouroboros.Storage.ChainDB.API             (ChainDB)
@@ -60,12 +61,11 @@ withDB
   -> Tracer IO (ChainDB.TraceEvent (Block ByronConfig))
   -> Tracer IO Sqlite.TraceEvent
   -> ResourceRegistry IO
-  -> SecurityParam
   -> NodeConfig (BlockProtocol (Block ByronConfig))
   -> ExtLedgerState (Block ByronConfig)
   -> (Index IO (Header (Block ByronConfig)) -> ChainDB IO (Block ByronConfig) -> IO t)
   -> IO t
-withDB dbOptions dbTracer indexTracer rr securityParam nodeConfig extLedgerState k = do
+withDB dbOptions dbTracer indexTracer rr nodeConfig extLedgerState k = do
   -- The ChainDB/Storage layer will not create a directory for us, we have
   -- to ensure it exists.
   System.Directory.createDirectoryIfMissing True (dbFilePath dbOptions)
@@ -116,7 +116,7 @@ withDB dbOptions dbTracer indexTracer rr securityParam nodeConfig extLedgerState
 
         , cdbValidation = ValidateMostRecentEpoch
         , cdbBlocksPerFile = 21600 -- ?
-        , cdbMemPolicy = defaultMemPolicy securityParam
+        , cdbMemPolicy = defaultMemPolicy (protocolSecurityParam nodeConfig)
         , cdbDiskPolicy = ledgerDiskPolicy
 
         , cdbNodeConfig = nodeConfig

@@ -75,7 +75,7 @@ import Ouroboros.Consensus.Block (GetHeader (Header))
 import Ouroboros.Consensus.BlockchainTime (SlotLength (..), SystemStart (..), realBlockchainTime)
 import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
-import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
+import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..), protocolSecurityParam)
 import Ouroboros.Consensus.Mempool.API (Mempool)
 import Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import Ouroboros.Consensus.Node (getMempool)
@@ -86,6 +86,7 @@ import Ouroboros.Network.NodeToNode (withServer)
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (withRegistry)
 import Ouroboros.Network.Block (SlotNo (..), Point (..))
+import Ouroboros.Network.NodeToNode (withServer)
 import Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point (Block (..))
 import Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
@@ -369,11 +370,12 @@ runByron
   -> CSL.UpdateConfiguration
   -> CSL.NodeConfiguration
   -> Cardano.EpochSlots
+  -> SecurityParam
   -> Index IO (Header (Block ByronConfig))
   -> ChainDB IO (Block ByronConfig)
   -> Mempool IO (Block ByronConfig) TicketNo
   -> IO ()
-runByron tracer byronOptions genesisConfig blockConfig updateConfig nodeConfig epochSlots idx db mempool = do
+runByron tracer byronOptions genesisConfig blockConfig updateConfig nodeConfig epochSlots k idx db mempool = do
     let cslTrace = mkCSLTrace tracer
         trace = Trace.appendName "diffusion" cslTrace
     -- Get the `NetworkConfig` from the options
@@ -408,10 +410,8 @@ runByron tracer byronOptions genesisConfig blockConfig updateConfig nodeConfig e
   where
 
   byronClient genesisBlock bp = void $ concurrently
-    (Byron.download textTracer genesisBlock epochSlots db bp k)
-    (Byron.announce Nothing                            db bp)
-    where
-    k _ _ = pure ()
+    (Byron.download textTracer genesisBlock epochSlots k db bp)
+    (Byron.announce Nothing                              db bp)
 
   textTracer :: Tracer IO Text.Builder
   textTracer = contramap
@@ -514,9 +514,7 @@ main = do
         -- Thread registry is needed by ChainDB and by the network protocols.
         -- I assume it's supposed to be shared?
         ResourceRegistry.withRegistry $ \rr -> do
-          let -- TODO Grab this from the newGenesisConfig config
-              securityParam = SecurityParam 2160
-              protocolVersion = Cardano.ProtocolVersion 1 0 0
+          let protocolVersion = Cardano.ProtocolVersion 1 0 0
               softwareVersion = Cardano.SoftwareVersion
                 (Cardano.ApplicationName (fromString "cardano-byron-proxy")) 2
               protocolInfo = protocolInfoByron
@@ -549,6 +547,7 @@ main = do
                       (Reflection.given :: CSL.UpdateConfiguration)
                       (Reflection.given :: CSL.NodeConfiguration)
                       epochSlots
+                      (protocolSecurityParam nodeConfig)
                       idx
                       cdb
                       (getMempool kernel)
