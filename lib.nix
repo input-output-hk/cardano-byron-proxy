@@ -16,4 +16,4 @@ let
       }) {};
   pkgs = iohkNix.pkgs;
   lib = pkgs.lib;
-in lib // iohkNix
+in lib // iohkNix.cardanoLib // iohkNix

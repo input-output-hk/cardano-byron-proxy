@@ -32,13 +32,7 @@ let
   # nixTools contains all the haskell binaries and libraries built by haskell.nix
   nixTools = import ./nix/nix-tools.nix {};
   # cardano-sl
-  oldCardanoRev = (builtins.fromJSON (builtins.readFile ./nix/old-cardano-sl-src.json)).rev;
-  oldCardanoSrc = import ./nix/old-cardano.nix {
-    inherit commonLib;
-  };
-  oldCardano = (import oldCardanoSrc { gitrev = oldCardanoRev;});
-  inherit (oldCardano) cardanoConfig;
-  environments = builtins.removeAttrs (import (oldCardanoSrc + "/lib.nix")).environments [ "demo" ];
+  inherit (commonLib) cardanoConfig environments;
 
   # scripts contains startup scripts for proxy
   scripts = import ./nix/scripts.nix {
