@@ -1,3 +1,4 @@
 [
-  ./byron-proxy.nix
+  ./byron-proxy-options.nix
+  ./byron-proxy-service.nix
 ]

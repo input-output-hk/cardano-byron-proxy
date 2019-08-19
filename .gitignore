@@ -3,6 +3,7 @@ dist-newstyle/
 .stack-work/
 launch*
 result*
+state-*
 db-byron-proxy-*
 index-byron-proxy-*
 launch-*
