@@ -1,3 +1,14 @@
+{-|
+Module      : Ouroboros.Byron.Proxy.Genesis.Convert
+Description : Conversion of legacy cardano-sl genesis configuration.
+
+cardano-byron-proxy must use legacy cardano-sl genesis configuration in order
+to run the Byron side, and must also use a similar configuration to set up
+the Shelley side. The definitions in this module convert values of legacy Byron
+configuration types (cardano-sl) into their corresponding new Shelley
+types (cardano-ledger).
+-}
+
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE GADTSyntax #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -7,8 +18,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE PatternSynonyms #-}
-
-{-# LANGUAGE TypeFamilies #-}
 
 module Ouroboros.Byron.Proxy.Genesis.Convert where
 
@@ -195,7 +204,6 @@ convertProtocolParameters bvd = Cardano.ProtocolParameters
   , Cardano.ppTxFeePolicy = convertTxFeePolicy (CSL.bvdTxFeePolicy bvd)
   , Cardano.ppUnlockStakeEpoch = convertEpochIndex (CSL.bvdUnlockStakeEpoch bvd)
   }
-
 
 convertGenesisSpec :: CSL.GenesisSpec -> Cardano.GenesisSpec
 convertGenesisSpec gspec = Cardano.UnsafeGenesisSpec
