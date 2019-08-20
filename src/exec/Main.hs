@@ -25,7 +25,7 @@ import qualified Data.Text as Text
 import qualified Data.Text.Lazy.Builder as Text
 import qualified Network.Socket as Network
 import qualified Options.Applicative as Opt
-import System.FilePath (takeDirectory)
+import System.FilePath ((</>), takeDirectory)
 import System.IO.Error (userError)
 
 import qualified Cardano.BM.Data.Aggregated as Monitoring
@@ -85,7 +85,8 @@ import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..))
 import Ouroboros.Consensus.Node.ProtocolInfo.Byron (PBftSignatureThreshold (..),
            protocolInfoByron)
 import Ouroboros.Network.NodeToNode (withServer)
-import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry, withThreadRegistry)
+import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (with)
 import Ouroboros.Network.Block (SlotNo (..), Point (..))
 import Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point (Block (..))
@@ -316,7 +317,7 @@ cliParserInfo = Opt.info cliParser infoMod
 runShelleyServer
   :: ( )
   => Address
-  -> ThreadRegistry IO
+  -> ResourceRegistry IO
   -> ConnectionTable IO
   -> Shelley.ResponderVersions
   -> IO ()
@@ -333,7 +334,7 @@ runShelleyServer addr _ ctable rversions = do
 runShelleyClient
   :: ( )
   => [Address]
-  -> ThreadRegistry IO
+  -> ResourceRegistry IO
   -> ConnectionTable IO
   -> Shelley.InitiatorVersions
   -> IO ()
@@ -368,11 +369,12 @@ runByron
   -> CSL.Genesis.Config
   -> Cardano.ProtocolMagicId
   -> Cardano.EpochSlots
+  -> ResourceRegistry IO
   -> Index IO (Header (Block ByronConfig))
   -> ChainDB IO (Block ByronConfig)
   -> Mempool IO (Block ByronConfig) TicketNo
   -> IO ()
-runByron tracer byronOptions genesisConfig _ epochSlots idx db mempool = do
+runByron tracer byronOptions genesisConfig _ epochSlots rr idx db mempool = do
     let cslTrace = mkCSLTrace tracer
     -- Get the `NetworkConfig` from the options
     networkConfig <- CSL.intNetworkConfigOpts
@@ -412,7 +414,7 @@ runByron tracer byronOptions genesisConfig _ epochSlots idx db mempool = do
     -- It would be much better if intNetworkConfigOpts set up the static
     -- peers to begin with, but that's just not how it is.
     withAsync (CSL.launchStaticConfigMonitoring (ncTopology networkConfig)) $ \monitorThread ->
-      withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc idx db mempool $ \bp -> do
+      withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc rr idx db mempool $ \bp -> do
         link monitorThread
         byronClient genesisBlock bp
 
@@ -452,20 +454,25 @@ main = do
       (CSL.ccTxValRules yamlConfig)
       (CSL.ccGenesis yamlConfig)
     -- New part.
-    -- Uses a MonadError constraint, so use runExceptT and throw an
-    -- exception if it fails (the configuration error is not an Exception
-    -- though, so userError is used).
-    outcome <- runExceptT $ Cardano.mkConfigFromStaticConfig
-      (convertRequiresNetworkMagic (CSL.ccReqNetMagic yamlConfig))
-      (fmap convertSystemStart (CSL.cfoSystemStart confOpts))
-      (CSL.cfoSeed confOpts)
-      -- Careful to adjust the file path: CSL puts the configuration directory
-      -- part (`configDir`) in front of it, but cardano-ledger's variant does
-      -- not.
-      (convertStaticConfig configDir (CSL.ccGenesis yamlConfig))
-    newGenesisConfig <- case outcome of
-      Left confError -> throwIO (userError (show confError))
-      Right it       -> pure it
+    newGenesisConfig <- case CSL.ccGenesis yamlConfig of
+      -- Recently, making a config from a "spec" was removed from cardano-ledger,
+      -- so if the CSL configuration does not use a genesis json file then
+      -- we just give up.
+      CSL.GCSpec _ -> throwIO (userError "genesis config from spec not supported, must use a json file")
+      CSL.GCSrc fp hash -> do
+        -- Uses a MonadError constraint, so use runExceptT and throw an
+        -- exception if it fails (the configuration error is not an Exception
+        -- though, so userError is used).
+        outcome <- runExceptT $ Cardano.mkConfigFromFile
+          (convertRequiresNetworkMagic (CSL.ccReqNetMagic yamlConfig))
+          -- Careful to adjust the file path: CSL puts the configuration directory
+          -- part (`configDir`) in front of it, but cardano-ledger's variant does
+          -- not.
+          (configDir </> fp)
+          (convertHash hash)
+        case outcome of
+          Left confError -> throwIO (userError (show confError))
+          Right it       -> pure it
     let epochSlots = Cardano.EpochSlots (fromIntegral (CSL.configEpochSlots oldGenesisConfig))
         protocolMagic = Cardano.ProtocolMagicId
           . fromIntegral -- Int32 -> Word32
@@ -519,7 +526,7 @@ main = do
         traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Opening database")
         -- Thread registry is needed by ChainDB and by the network protocols.
         -- I assume it's supposed to be shared?
-        withThreadRegistry $ \treg -> do
+        ResourceRegistry.with $ \rr -> do
           let -- TODO Grab this from the newGenesisConfig config
               securityParam = SecurityParam 2160
               protocolVersion = Cardano.ProtocolVersion 1 0 0
@@ -539,12 +546,12 @@ main = do
               slotMs = Cardano.ppSlotDuration (Cardano.gdProtocolParameters (Cardano.configGenesisData newGenesisConfig))
               slotDuration = SlotLength (fromRational (toRational slotMs / 1000))
               systemStart = SystemStart (Cardano.gdStartTime (Cardano.configGenesisData newGenesisConfig))
-          btime <- realBlockchainTime treg slotDuration systemStart
-          withDB dbc dbTracer indexTracer treg securityParam nodeConfig extLedgerState $ \idx cdb -> do
+          btime <- realBlockchainTime rr slotDuration systemStart
+          withDB dbc dbTracer indexTracer rr securityParam nodeConfig extLedgerState $ \idx cdb -> do
             traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
-            Shelley.withShelley treg cdb nodeConfig nodeState btime $ \kernel ctable iversions rversions -> do
-              let server = runShelleyServer (soLocalAddress      (bpoShelleyOptions bpo)) treg ctable rversions
-                  client = runShelleyClient (soProducerAddresses (bpoShelleyOptions bpo)) treg ctable iversions
+            Shelley.withShelley rr cdb nodeConfig nodeState btime $ \kernel ctable iversions rversions -> do
+              let server = runShelleyServer (soLocalAddress      (bpoShelleyOptions bpo)) rr ctable rversions
+                  client = runShelleyClient (soProducerAddresses (bpoShelleyOptions bpo)) rr ctable iversions
                   byron  = case bpoByronOptions bpo of
                     Nothing -> pure ()
                     Just bopts -> runByron
@@ -553,6 +560,7 @@ main = do
                       oldGenesisConfig
                       protocolMagic
                       epochSlots
+                      rr
                       idx
                       cdb
                       (getMempool kernel)

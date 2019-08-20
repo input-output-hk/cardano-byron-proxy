@@ -11,6 +11,7 @@ import Control.Exception (bracket)
 import Ouroboros.Byron.Proxy.Index.Types (Index)
 import qualified Ouroboros.Byron.Proxy.Index.Types as Index
 import Ouroboros.Consensus.Block (GetHeader (Header))
+import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import Ouroboros.Network.Block (ChainUpdate (..), Point (..))
 import Ouroboros.Network.Point (WithOrigin (Origin))
 import Ouroboros.Storage.ChainDB.API (ChainDB, Reader)
@@ -62,8 +63,14 @@ trackReader idx reader = do
 -- rebuilt. This is not ideal: there may be an intersection. TODO would be
 -- better to check the newest slot older than `k` back from tip of index, and
 -- go from there.
-trackChainDB :: forall blk t . Index IO (Header blk) -> ChainDB IO blk -> IO t -> IO t
-trackChainDB idx cdb act = bracket acquireReader releaseReader $ \rdr -> do
+trackChainDB
+  :: forall blk t .
+     ResourceRegistry IO
+  -> Index IO (Header blk)
+  -> ChainDB IO blk
+  -> IO t
+  -> IO t
+trackChainDB rr idx cdb act = bracket acquireReader releaseReader $ \rdr -> do
   tipPoint <- Index.tip idx
   mPoint <- ChainDB.readerForward rdr [Point tipPoint]
   -- `readerForward` docs say that if we get `Nothing`, the next reader
@@ -82,6 +89,6 @@ trackChainDB idx cdb act = bracket acquireReader releaseReader $ \rdr -> do
     Right t -> pure t
   where
   acquireReader :: IO (Reader IO blk (Header blk))
-  acquireReader = ChainDB.newHeaderReader cdb
+  acquireReader = ChainDB.newHeaderReader cdb rr
   releaseReader :: Reader IO blk (Header blk) -> IO ()
   releaseReader = ChainDB.readerClose

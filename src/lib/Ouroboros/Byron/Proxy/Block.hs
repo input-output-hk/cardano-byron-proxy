@@ -17,7 +17,7 @@ module Ouroboros.Byron.Proxy.Block
   , isEBB
   ) where
 
-import qualified Data.ByteString.Lazy as Lazy
+import qualified Codec.CBOR.Write as CBOR (toStrictByteString)
 
 import qualified Pos.Chain.Block as CSL (HeaderHash)
 import qualified Pos.Crypto.Hashing as Legacy (AbstractHash (..))
@@ -28,7 +28,7 @@ import Cardano.Crypto.Hashing (AbstractHash (..))
 
 import qualified Ouroboros.Consensus.Block as Consensus (GetHeader (..))
 import Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB (..),
-         pattern ByronHeaderOrEBB, blockBytes, unByronHeaderOrEBB)
+         pattern ByronHeaderOrEBB, encodeByronBlock, unByronHeaderOrEBB)
 
 -- For type instance HeaderHash (Header blk) = HeaderHash blk
 -- Anyone who imports this module will almost certainly want that instance.
@@ -37,7 +37,7 @@ import Ouroboros.Consensus.Block ()
 type Block cfg = ByronBlockOrEBB cfg
 
 toSerializedBlock :: Block cfg -> SerializedBlock
-toSerializedBlock = Serialized . Lazy.toStrict . blockBytes
+toSerializedBlock = Serialized . CBOR.toStrictByteString . encodeByronBlock
 
 -- TODO: Move these functions to a compatibility module
 coerceHashToLegacy :: Cardano.HeaderHash -> CSL.HeaderHash

@@ -27,13 +27,14 @@ import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import Ouroboros.Consensus.Protocol (NodeConfig)
-import Ouroboros.Consensus.Util.ThreadRegistry (ThreadRegistry)
+import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import Ouroboros.Storage.FS.API.Types (MountPoint (..))
 import Ouroboros.Storage.FS.IO (ioHasFS)
 import Ouroboros.Storage.Common (EpochSize (..))
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Impl as ChainDB
+import Ouroboros.Storage.EpochInfo.Impl (newEpochInfo)
 import Ouroboros.Storage.ChainDB.Impl.Args (ChainDbArgs (..))
 import Ouroboros.Storage.ImmutableDB.Types (ValidationPolicy (..))
 import Ouroboros.Storage.LedgerDB.DiskPolicy (DiskPolicy (..))
@@ -56,13 +57,13 @@ withDB
   => DBConfig
   -> Tracer IO (ChainDB.TraceEvent (Block ByronConfig))
   -> Tracer IO Sqlite.TraceEvent
-  -> ThreadRegistry IO
+  -> ResourceRegistry IO
   -> SecurityParam
   -> NodeConfig (BlockProtocol (Block ByronConfig))
   -> ExtLedgerState (Block ByronConfig)
   -> (Index IO (Header (Block ByronConfig)) -> ChainDB IO (Block ByronConfig) -> IO t)
   -> IO t
-withDB dbOptions dbTracer indexTracer tr securityParam nodeConfig extLedgerState k = do
+withDB dbOptions dbTracer indexTracer rr securityParam nodeConfig extLedgerState k = do
   -- The ChainDB/Storage layer will not create a directory for us, we have
   -- to ensure it exists.
   System.Directory.createDirectoryIfMissing True (dbFilePath dbOptions)
@@ -70,7 +71,8 @@ withDB dbOptions dbTracer indexTracer tr securityParam nodeConfig extLedgerState
       epochSlots = Reflection.given
       epochSize = EpochSize $
         fromIntegral (Cardano.unEpochSlots epochSlots)
-      fp = dbFilePath dbOptions
+  epochInfo <- newEpochInfo (const (pure epochSize))
+  let fp = dbFilePath dbOptions
       -- Don't use the default 'diskPolicy', because that is meant for core
       -- nodes which update the ledger at most once (with one block) per slot
       -- duration while we're updating the ledger with as many blocks as we
@@ -116,14 +118,14 @@ withDB dbOptions dbTracer indexTracer tr securityParam nodeConfig extLedgerState
         , cdbDiskPolicy = ledgerDiskPolicy
 
         , cdbNodeConfig = nodeConfig
-        , cdbEpochSize = const (pure epochSize)
+        , cdbEpochInfo = epochInfo
         , cdbIsEBB = isEBB
         , cdbGenesis = pure extLedgerState
 
         , cdbTracer = dbTracer
-        , cdbThreadRegistry = tr
+        , cdbRegistry = rr
         , cdbGcDelay = secondsToDiffTime 20
         }
   bracket (ChainDB.openDB chainDBArgs) ChainDB.closeDB $ \cdb ->
     Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx ->
-      Index.trackChainDB idx cdb $ k idx cdb
+      Index.trackChainDB rr idx cdb $ k idx cdb

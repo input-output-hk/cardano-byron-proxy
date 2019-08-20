@@ -26,6 +26,7 @@
           (hsPkgs.contra-tracer)
           (hsPkgs.cardano-ledger-test)
           (hsPkgs.base16-bytestring)
+          (hsPkgs.bifunctors)
           (hsPkgs.bimap)
           (hsPkgs.bytestring)
           (hsPkgs.cardano-binary)
@@ -84,7 +85,11 @@
         "test-consensus" = {
           depends = [
             (hsPkgs.base)
+            (hsPkgs.cardano-binary)
             (hsPkgs.cardano-crypto-class)
+            (hsPkgs.cardano-crypto-wrapper)
+            (hsPkgs.cardano-ledger)
+            (hsPkgs.cardano-ledger-test)
             (hsPkgs.typed-protocols)
             (hsPkgs.network-mux)
             (hsPkgs.ouroboros-network)
@@ -100,6 +105,7 @@
             (hsPkgs.mtl)
             (hsPkgs.QuickCheck)
             (hsPkgs.random)
+            (hsPkgs.reflection)
             (hsPkgs.serialise)
             (hsPkgs.tasty)
             (hsPkgs.tasty-hunit)
@@ -112,6 +118,8 @@
           depends = [
             (hsPkgs.base)
             (hsPkgs.cardano-crypto-class)
+            (hsPkgs.cardano-ledger)
+            (hsPkgs.cardano-ledger-test)
             (hsPkgs.ouroboros-network)
             (hsPkgs.ouroboros-network-testing)
             (hsPkgs.ouroboros-consensus)
@@ -131,6 +139,7 @@
             (hsPkgs.QuickCheck)
             (hsPkgs.quickcheck-state-machine)
             (hsPkgs.random)
+            (hsPkgs.reflection)
             (hsPkgs.serialise)
             (hsPkgs.tasty)
             (hsPkgs.tasty-hunit)
@@ -146,8 +155,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/ouroboros-network";
-      rev = "49fde639a21a13c55795075b5d967bb966f1a923";
-      sha256 = "05hkgsccyawnfh53xskqa3f1pk7g12kcwzf0gwpygyydh42f6bc4";
+      rev = "912c0639292e95bb72c0985fa06dfae820b01364";
+      sha256 = "1qq2lnv5cml5zrm0mwz48wznliclck2pkw5fhm9n9hxrmm469ycq";
       });
     postUnpack = "sourceRoot+=/ouroboros-consensus; echo source root reset to \$sourceRoot";
     }

@@ -20,7 +20,6 @@ import Data.Time.Clock (NominalDiffTime, UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Word (Word16)
 import Numeric.Natural (Natural)
-import System.FilePath ((</>))
 
 import qualified Cardano.Binary as Binary
 import qualified Cardano.Chain.Common as Cardano
@@ -37,13 +36,6 @@ import qualified Pos.Chain.Update as CSL
 import qualified Pos.Core.Common as CSL
 import qualified Pos.Core.Slotting as CSL
 import qualified Pos.Crypto as CSL
-
--- | The `FilePath` will be prefixed to the genesis json filepath, in case of
--- a `GCSrc`.
-convertStaticConfig :: FilePath -> CSL.StaticConfig -> Cardano.StaticConfig
-convertStaticConfig configDir cslConfig = case cslConfig of
-  CSL.GCSrc fp hash -> Cardano.GCSrc (configDir </> fp) (convertHash hash)
-  CSL.GCSpec gspec  -> Cardano.GCSpec (convertGenesisSpec gspec)
 
 convertHash :: CSL.AbstractHash algo a -> Cardano.AbstractHash algo b
 convertHash (CSL.AbstractHash it) = Cardano.AbstractHash it

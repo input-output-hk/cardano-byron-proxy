@@ -13,6 +13,7 @@ module Ouroboros.Byron.Proxy.Main where
 
 import Control.Arrow (first)
 import Codec.CBOR.Decoding (Decoder)
+import qualified Codec.CBOR.Write as CBOR (toLazyByteString)
 import Control.Concurrent.Async (concurrently, race)
 import Control.Concurrent.STM (STM, atomically, check)
 import Control.Concurrent.STM.TBQueue (TBQueue, newTBQueueIO, readTBQueue,
@@ -74,11 +75,12 @@ import Ouroboros.Byron.Proxy.Block (Block, Header, toSerializedBlock,
 import Ouroboros.Byron.Proxy.Index.Types (Index)
 import qualified Ouroboros.Byron.Proxy.Index.Types as Index
 import Ouroboros.Consensus.Block (getHeader)
-import Ouroboros.Consensus.Ledger.Byron (blockBytes, byronTx, byronTxId, mkByronTx)
+import Ouroboros.Consensus.Ledger.Byron (byronTx, byronTxId, encodeByronBlock, mkByronTx)
 import Ouroboros.Consensus.Node (getMempoolReader, getMempoolWriter)
 import Ouroboros.Consensus.Mempool.API (Mempool, ApplyTx, GenTx, GenTxId)
 import qualified Ouroboros.Consensus.Mempool.API as Mempool
 import Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
+import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import Ouroboros.Network.Block (ChainUpdate (..), Point (..))
 import qualified Ouroboros.Network.Point as Point (block)
 import qualified Ouroboros.Network.TxSubmission.Inbound as Tx.In
@@ -405,7 +407,7 @@ updateBestTipMaybe peer header = maybe bt (updateBestTip peer header)
 -- The old cardano-sl API basically assumes there are never forks, so if the
 -- `ChainDB` presents one, we'll just end the conduit.
 bbsStreamBlocks
-  :: EpochSlots
+  :: ResourceRegistry IO
   -> Index IO (Header (Block cfg))
   -> ChainDB IO (Block cfg)
   -> (forall a . Text -> IO a)
@@ -416,7 +418,7 @@ bbsStreamBlocks
   -> Bool -- ^ Set True to yield the block at the start hash.
   -> (ConduitT () s IO () -> IO t)
   -> IO t
-bbsStreamBlocks _ idx db _ hh f yieldFirst k = do
+bbsStreamBlocks rr idx db _ hh f yieldFirst k = do
   mSlotNo <- Index.lookup idx (coerceHashFromLegacy hh)
   case mSlotNo of
     Nothing -> k (pure ())
@@ -443,7 +445,7 @@ bbsStreamBlocks _ idx db _ hh f yieldFirst k = do
             _ -> error "bbsStreamBlocks: ChainDB reader unexpected instruction"
   where
 
-  acquireReader = ChainDB.newBlockReader db
+  acquireReader = ChainDB.newBlockReader db rr
   -- Reader close is not in master yet.
   releaseReader _rdr = pure ()
 
@@ -490,7 +492,7 @@ bbsGetBlockHeader _ idx db onErr hh = do
         Nothing  -> pure Nothing
         -- The Block must be converted to a Byron.Legacy.Block and then its
         -- header taken.
-        Just blk -> case CSL.decodeFull (blockBytes blk) of
+        Just blk -> case CSL.decodeFull (CBOR.toLazyByteString (encodeByronBlock blk)) of
           Left  err       -> onErr err
           Right legacyBlk -> pure $ Just $ Byron.Legacy.getBlockHeader legacyBlk
       where
@@ -506,7 +508,7 @@ bbsGetBlockHeader _ idx db onErr hh = do
 --
 -- The resulting list includes both endpoints.
 bbsGetHashesRange
-  :: EpochSlots
+  :: ResourceRegistry IO
   -> Index IO (Header (Block cfg))
   -> ChainDB IO (Block cfg)
   -> (forall a . Text -> IO a)
@@ -514,7 +516,7 @@ bbsGetHashesRange
   -> Byron.Legacy.HeaderHash
   -> Byron.Legacy.HeaderHash
   -> IO (Maybe (OldestFirst NonEmpty Byron.Legacy.HeaderHash))
-bbsGetHashesRange _ idx db onErr mLimit from to = do
+bbsGetHashesRange rr idx db onErr mLimit from to = do
   mFrom <- Index.lookup idx (coerceHashFromLegacy from)
   mTo   <- Index.lookup idx (coerceHashFromLegacy to)
   case (mFrom, mTo) of
@@ -530,7 +532,7 @@ bbsGetHashesRange _ idx db onErr mLimit from to = do
   where
 
   acquireIterator streamFrom streamTo = do
-    outcome <- ChainDB.streamBlocks db streamFrom streamTo
+    outcome <- ChainDB.streamBlocks db rr streamFrom streamTo
     case outcome of
       Left (ChainDB.MissingBlock _point)      -> onErr "FIXME put error message"
       Left (ChainDB.ForkTooOld   _streamFrom) -> onErr "FIXME put error message"
@@ -578,6 +580,7 @@ bbsGetHashesRange _ idx db onErr mLimit from to = do
 -- does it, so it's the de facto contract.
 bbsGetBlockHeaders
   :: EpochSlots
+  -> ResourceRegistry IO
   -> Index IO (Header (Block cfg))
   -> ChainDB IO (Block cfg)
   -> (forall a . Text -> IO a)
@@ -585,17 +588,17 @@ bbsGetBlockHeaders
   -> NonEmpty Byron.Legacy.HeaderHash
   -> Maybe Byron.Legacy.HeaderHash -- ^ Optional endpoint.
   -> IO (Maybe (NewestFirst NonEmpty Byron.Legacy.BlockHeader))
-bbsGetBlockHeaders epochSlots idx db onErr mLimit checkpoints mTip = do
+bbsGetBlockHeaders epochSlots rr idx db onErr mLimit checkpoints mTip = do
   knownCheckpoints <- fmap catMaybes $ forM (NE.toList checkpoints) (bbsGetBlockHeader epochSlots idx db onErr)
   let newestCheckpoint = maximumBy (comparing getEpochOrSlot) knownCheckpoints
   case knownCheckpoints of
     []    -> pure Nothing
     -- Now we know `newestCheckpoints` is not _|_ (maximumBy is partial).
     _ : _ ->
-      let f = \blk -> case CSL.decodeFull (blockBytes blk) of
+      let f = \blk -> case CSL.decodeFull (CBOR.toLazyByteString (encodeByronBlock blk)) of
                 Left err          -> onErr err
                 Right legacyBlock -> pure $ Byron.Legacy.getBlockHeader legacyBlock
-      in  bbsStreamBlocks epochSlots idx db onErr (Byron.Legacy.headerHash newestCheckpoint) f True $ \producer ->
+      in  bbsStreamBlocks rr idx db onErr (Byron.Legacy.headerHash newestCheckpoint) f True $ \producer ->
             runConduit (producer .| consumer 0 (fromMaybe maxBound mLimit) [])
   where
   consumer :: Word -- Limit
@@ -664,12 +667,13 @@ withByronProxy
   :: ( ApplyTx (Block cfg) )
   => Tracer IO (Severity, Text.Builder)
   -> ByronProxyConfig
+  -> ResourceRegistry IO
   -> Index IO (Header (Block cfg))
   -> ChainDB IO (Block cfg)
   -> Mempool IO (Block cfg) TicketNo
   -> (ByronProxy -> IO t)
   -> IO t
-withByronProxy trace bpc idx db mempool k = do
+withByronProxy trace bpc rr idx db mempool k = do
 
     -- The best announced block header, and the identifiers of every peer which
     -- announced it. `Nothing` whenever there is no known announcement. It will
@@ -770,7 +774,7 @@ withByronProxy trace bpc idx db mempool k = do
           , Logic.getBlockHeader = bbsGetBlockHeader epochSlots idx db blockDecodeError
           -- MsgGetHeaders conversation
           , getBlockHeaders      = \mLimit checkpoints mTip -> do
-              result <- bbsGetBlockHeaders epochSlots idx db blockDecodeError mLimit checkpoints mTip
+              result <- bbsGetBlockHeaders epochSlots rr idx db blockDecodeError mLimit checkpoints mTip
               case result of
                 Nothing -> pure $ Left $ GHFBadInput ""
                 Just it -> pure $ Right it
@@ -781,14 +785,14 @@ withByronProxy trace bpc idx db mempool k = do
                 Nothing -> do
                   traceWith trace (Error, "getTip: empty database")
                   throwIO $ EmptyDatabaseError
-                Just blk -> case CSL.decodeFull (blockBytes blk) of
+                Just blk -> case CSL.decodeFull (CBOR.toLazyByteString (encodeByronBlock blk)) of
                   Left  err       -> do
                     traceWith trace (Error, "getTip: malformed block")
                     throwIO $ MalformedBlock err
                   Right (legacyBlk :: Byron.Legacy.Block) -> pure legacyBlk
           -- GetBlocks conversation
           , getHashesRange       = \mLimit from to -> do
-              result <- bbsGetHashesRange epochSlots idx db blockDecodeError mLimit from to
+              result <- bbsGetHashesRange rr idx db blockDecodeError mLimit from to
               case result of
                 Nothing -> pure $ Left $ GHRBadInput ""
                 Just it -> pure $ Right it
@@ -801,7 +805,7 @@ withByronProxy trace bpc idx db mempool k = do
           -- That's done by giving `False` to `bbsStreamBlocks`, which uses
           -- the `ChainDB` `Reader` API to do streaming. It stops at a fork.
           , Logic.streamBlocks   = \hh l ->
-              bbsStreamBlocks epochSlots idx db blockDecodeError hh (pure . toSerializedBlock) False l
+              bbsStreamBlocks rr idx db blockDecodeError hh (pure . toSerializedBlock) False l
           }
 
         networkConfig = bpcNetworkConfig bpc
