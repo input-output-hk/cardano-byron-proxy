@@ -39,7 +39,7 @@ in {
       };
 
       environment = mkOption {
-        type = types.str;
+        type = types.enum (builtins.attrNames environments);
         default = "testnet";
         description = ''
           environment proxy will connect to

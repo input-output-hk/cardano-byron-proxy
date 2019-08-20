@@ -31,7 +31,7 @@ in {
         WorkingDirectory = cfg.stateDir;
         # This assumes /var/lib/ is a prefix of cfg.stateDir.
         # This is checked as an assertion below.
-        StateDirectory =  lib.removePrefix stateDirBase cfg.stateDir;
+        StateDirectory = lib.removePrefix stateDirBase cfg.stateDir;
       };
     };
     assertions = [{

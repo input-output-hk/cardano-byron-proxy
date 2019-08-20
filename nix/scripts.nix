@@ -20,8 +20,6 @@ let
       proxyHost = "127.0.0.1";
       proxyPort = 7777;
       nodeId = null;
-
-      topologyFile = commonLib.mkProxyTopology envConfig.relays;
     };
     config = defaultConfig // envConfig // customConfig;
     serviceConfig = {
@@ -30,8 +28,7 @@ let
         environment
         pbftThreshold
         proxyHost
-        proxyPort
-        topologyFile;
+        proxyPort;
       logger.configFile = config.loggingConfig;
     };
     proxyConf = { config.services.byron-proxy = serviceConfig; };
@@ -45,7 +42,7 @@ let
   in pkgs.writeScript "byron-proxy-${envConfig.name}" ''
     #!${pkgs.runtimeShell}
     set -euo pipefail
-    ${proxyScript}
+    ${proxyScript} $@
   '';
   scripts = commonLib.forEnvironments (environment:
   {
