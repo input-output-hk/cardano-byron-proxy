@@ -511,7 +511,9 @@ main = do
               TraceAddBlockEvent (AddBlockValidation it@(InvalidBlock _ _)) ->
                   let val = ("db", Monitoring.Error, Monitoring.LogMessage (fromString (show it)))
                   in  doConvertedTrace val >> error ("oops: " ++ show it)
-              _ -> pure ()
+              _ ->
+                  let val = ("db", Monitoring.Debug, Monitoring.LogMessage (fromString (show trEvent)))
+                  in  doConvertedTrace val
             indexTracer :: Tracer IO Index.TraceEvent
             indexTracer = Tracer $ \trEvent ->
               let val = ("index", Monitoring.Info, Monitoring.LogMessage (fromString (show trEvent)))
