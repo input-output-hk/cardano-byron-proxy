@@ -1,18 +1,55 @@
 {
   commonLib,
   customConfig,
-  cardanoConfig,
-  environments,
-  nixTools
 }:
 
-let
-  byronProxy = nixTools.nix-tools.exes.cardano-byron-proxy;
+with commonLib.pkgs.lib;
 
-in {
-  byron = {
-    proxy = import ./byron-proxy-scripts.nix {
-      inherit commonLib environments byronProxy customConfig cardanoConfig;
-    };
+let
+  pkgs = commonLib.pkgs;
+  pkgsModule = {
+    config._module.args.pkgs = mkDefault pkgs;
   };
-}
+  mkProxyScript = envConfig: let
+    defaultConfig = {
+      stateDir = "state-proxy-${envConfig.name}";
+      environment = envConfig.name;
+      loggingConfig = ../cfg/logging.yaml;
+      pbftThreshold = null;
+      # defaults to proxy if env has no relays
+      proxyHost = "127.0.0.1";
+      proxyPort = 7777;
+      nodeId = null;
+
+      topologyFile = commonLib.mkProxyTopology envConfig.relays;
+    };
+    config = defaultConfig // envConfig // customConfig;
+    serviceConfig = {
+      inherit (config)
+        stateDir
+        environment
+        pbftThreshold
+        proxyHost
+        proxyPort
+        topologyFile;
+      logger.configFile = config.loggingConfig;
+    };
+    proxyConf = { config.services.byron-proxy = serviceConfig; };
+    proxyScript = (modules.evalModules {
+      modules = [
+        ./nixos/byron-proxy-options.nix
+        proxyConf
+        pkgsModule
+      ];
+    }).config.services.byron-proxy.script;
+  in pkgs.writeScript "byron-proxy-${envConfig.name}" ''
+    #!${pkgs.runtimeShell}
+    set -euo pipefail
+    ${proxyScript}
+  '';
+  scripts = commonLib.forEnvironments (environment:
+  {
+    proxy = mkProxyScript environment;
+  });
+in scripts
+

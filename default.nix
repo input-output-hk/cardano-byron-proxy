@@ -36,7 +36,7 @@ let
 
   # scripts contains startup scripts for proxy
   scripts = import ./nix/scripts.nix {
-    inherit cardanoConfig commonLib nixTools customConfig environments;
+    inherit commonLib customConfig;
   };
   # NixOS tests run a proxy and validate it listens
   nixosTests = import ./nix/nixos/tests { inherit (commonLib) pkgs; };
