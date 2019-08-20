@@ -11,10 +11,10 @@
 {-# LANGUAGE TypeFamilies #-}
 
 import Codec.SerialiseTerm (decodeTerm, encodeTerm)
+import Control.Concurrent.Async (concurrently, link, wait, withAsync)
 import Control.Exception (throwIO)
 import Control.Monad (mapM, void)
 import Control.Monad.Trans.Except (runExceptT)
-import Control.Monad.Class.MonadAsync (concurrently, wait)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import Data.Functor.Contravariant (Op (..))
 import Data.List (intercalate)
@@ -53,6 +53,7 @@ import qualified Pos.Diffusion.Full as CSL (FullDiffusionConfiguration (..))
 import qualified Pos.Infra.Network.CLI as CSL (NetworkConfigOpts (..),
                                                externalNetworkAddressOption,
                                                intNetworkConfigOpts,
+                                               launchStaticConfigMonitoring,
                                                listenNetworkAddressOption)
 import Pos.Infra.Network.Types (NetworkConfig (..))
 import qualified Pos.Infra.Network.Policy as Policy
@@ -406,8 +407,14 @@ runByron tracer byronOptions genesisConfig _ epochSlots idx db mempool = do
         genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
                                          (CSL.configGenesisHash genesisConfig)
                                          (CSL.genesisLeaders genesisConfig)
-    withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc idx db mempool $ \bp ->
-      byronClient genesisBlock bp
+    -- *MUST* launch static config monitoring thread, otherwise nodes
+    -- configured with static routes *will not update their peers lists*.
+    -- It would be much better if intNetworkConfigOpts set up the static
+    -- peers to begin with, but that's just not how it is.
+    withAsync (CSL.launchStaticConfigMonitoring (ncTopology networkConfig)) $ \monitorThread ->
+      withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc idx db mempool $ \bp -> do
+        link monitorThread
+        byronClient genesisBlock bp
 
   where
 
