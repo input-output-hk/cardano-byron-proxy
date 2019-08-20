@@ -27,7 +27,7 @@ import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import Ouroboros.Consensus.Protocol (NodeConfig)
-import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry, forkLinkedTransfer)
 import Ouroboros.Storage.FS.API.Types (MountPoint (..))
 import Ouroboros.Storage.FS.IO (ioHasFS)
 import Ouroboros.Storage.Common (EpochSize (..))
@@ -127,5 +127,6 @@ withDB dbOptions dbTracer indexTracer rr securityParam nodeConfig extLedgerState
         , cdbGcDelay = secondsToDiffTime 20
         }
   bracket (ChainDB.openDB chainDBArgs) ChainDB.closeDB $ \cdb ->
-    Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx ->
-      Index.trackChainDB rr idx cdb $ k idx cdb
+    Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx -> do
+      _ <- forkLinkedTransfer rr $ \rr' -> Index.trackChainDB rr' idx cdb
+      k idx cdb

@@ -51,9 +51,12 @@ trackReader idx reader = do
       trackReader idx reader
     Nothing -> pure ()
 
--- | Have an Index track a ChainDB using its Reader API for the duration of
--- some monadic action. If the ChainDB does not contain the tip of the Index,
--- then the whole index will be rebuilt.
+-- | Have an Index track a ChainDB using its Reader API. You probably want to
+-- race this with some other thread that runs your application. Also
+-- remember to forkLinkedTransfer your resource registry.
+--
+-- If the ChainDB does not contain the tip of the Index, then the whole index
+-- will be rebuilt.
 --
 -- It will spawn a thread to do the index updates. This must be the only
 -- index writer. It is run by `race` with the action, so exceptions in either
@@ -64,13 +67,12 @@ trackReader idx reader = do
 -- better to check the newest slot older than `k` back from tip of index, and
 -- go from there.
 trackChainDB
-  :: forall blk t .
+  :: forall blk void .
      ResourceRegistry IO
   -> Index IO (Header blk)
   -> ChainDB IO blk
-  -> IO t
-  -> IO t
-trackChainDB rr idx cdb act = bracket acquireReader releaseReader $ \rdr -> do
+  -> IO void
+trackChainDB rr idx cdb = bracket acquireReader releaseReader $ \rdr -> do
   tipPoint <- Index.tip idx
   mPoint <- ChainDB.readerForward rdr [Point tipPoint]
   -- `readerForward` docs say that if we get `Nothing`, the next reader
@@ -83,10 +85,7 @@ trackChainDB rr idx cdb act = bracket acquireReader releaseReader $ \rdr -> do
   -- First, block until the index is caught up to the tip ...
   trackReader idx rdr
   -- ... then attempt to stay in sync.
-  outcome <- race (trackReaderBlocking idx rdr) act
-  case outcome of
-    Left impossible -> impossible
-    Right t -> pure t
+  trackReaderBlocking idx rdr
   where
   acquireReader :: IO (Reader IO blk (Header blk))
   acquireReader = ChainDB.newHeaderReader cdb rr
