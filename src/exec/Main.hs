@@ -491,11 +491,7 @@ runByron tracer byronOptions genesisConfig blockConfig updateConfig nodeConfig e
     networkConfig <- CSL.intNetworkConfigOpts
       (Trace.named cslTrace)
       (boNetworkOptions byronOptions)
-    let networkConfig' = networkConfig
-          { ncEnqueuePolicy = Policy.defaultEnqueuePolicyRelay
-          , ncDequeuePolicy = Policy.defaultDequeuePolicyRelay
-          }
-        bpc :: ByronProxyConfig
+    let bpc :: ByronProxyConfig
         bpc = configFromCSLConfigs
                 genesisConfig
                 blockConfig
