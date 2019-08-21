@@ -51,8 +51,7 @@ trackReader idx reader = do
     Nothing -> pure ()
 
 -- | Have an Index track a ChainDB using its Reader API. You probably want to
--- race this with some other thread that runs your application. Also
--- remember to forkLinkedTransfer your resource registry.
+-- race this with some other thread that runs your application.
 --
 -- If the ChainDB does not contain the tip of the Index, then the whole index
 -- will be rebuilt.

@@ -27,7 +27,8 @@ import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import Ouroboros.Consensus.Protocol (NodeConfig)
-import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry, forkLinkedTransfer)
+import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry, forkLinked)
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 import Ouroboros.Storage.FS.API.Types (MountPoint (..))
 import Ouroboros.Storage.FS.IO (ioHasFS)
 import Ouroboros.Storage.Common (EpochSize (..))
@@ -128,5 +129,5 @@ withDB dbOptions dbTracer indexTracer rr securityParam nodeConfig extLedgerState
         }
   bracket (ChainDB.openDB chainDBArgs) ChainDB.closeDB $ \cdb ->
     Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx -> do
-      _ <- forkLinkedTransfer rr $ \rr' -> Index.trackChainDB rr' idx cdb
+      _ <- forkLinked rr $ ResourceRegistry.with $ \rr' -> Index.trackChainDB rr' idx cdb
       k idx cdb
