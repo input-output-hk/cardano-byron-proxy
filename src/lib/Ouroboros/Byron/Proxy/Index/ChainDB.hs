@@ -5,7 +5,6 @@ module Ouroboros.Byron.Proxy.Index.ChainDB
   ( trackChainDB
   ) where
 
-import Control.Concurrent.Async (race)
 import Control.Exception (bracket)
 
 import Ouroboros.Byron.Proxy.Index.Types (Index)
