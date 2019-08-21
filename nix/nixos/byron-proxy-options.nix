@@ -48,7 +48,7 @@ in {
 
       pbftThreshold = mkOption {
         type = types.nullOr types.str;
-        default = null;
+        default = envConfig.pbftThreshold or null;
         description = ''
           PBFT Threshold
         '';
@@ -56,7 +56,7 @@ in {
 
       stateDir = mkOption {
         type = types.str;
-        default = "/var/lib/byron-proxy";
+        default = "/var/lib/byron-proxy/${cfg.environment}";
         description = ''
           Directory to store blockchain data.
         '';
