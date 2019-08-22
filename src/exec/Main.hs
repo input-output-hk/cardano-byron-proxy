@@ -14,6 +14,7 @@ import Codec.SerialiseTerm (decodeTerm, encodeTerm)
 import Control.Concurrent.Async (concurrently, link, wait, withAsync)
 import Control.Exception (throwIO)
 import Control.Monad (mapM, void)
+import Control.Monad.STM (retry)
 import Control.Monad.Trans.Except (runExceptT)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import Data.Functor.Contravariant (Op (..))
@@ -94,7 +95,7 @@ import Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
 import Ouroboros.Network.Protocol.Handshake.Version (DictVersion (..))
 import Ouroboros.Network.Server.ConnectionTable (ConnectionTable)
 import Ouroboros.Network.Socket (connectToNode')
-import Ouroboros.Network.Subscription.Common (IPSubscriptionTarget (..), ipSubscriptionWorker)
+import Ouroboros.Network.Subscription (IPSubscriptionTarget (..), ipSubscriptionWorker)
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 import Ouroboros.Storage.ChainDB.Impl.Types (TraceEvent (..), TraceAddBlockEvent (..), TraceValidationEvent (..))
 
@@ -318,7 +319,7 @@ runShelleyServer
   :: ( )
   => Address
   -> ResourceRegistry IO
-  -> ConnectionTable IO
+  -> ConnectionTable IO Network.SockAddr
   -> Shelley.ResponderVersions
   -> IO ()
 runShelleyServer addr _ ctable rversions = do
@@ -335,15 +336,15 @@ runShelleyClient
   :: ( )
   => [Address]
   -> ResourceRegistry IO
-  -> ConnectionTable IO
+  -> ConnectionTable IO Network.SockAddr
   -> Shelley.InitiatorVersions
   -> IO ()
 runShelleyClient producerAddrs _ ctable iversions = do
   -- Expect AddrInfo, convert to SockAddr, then pass to ipSubscriptionWorker
   sockAddrs <- mapM resolveAddress producerAddrs
   ipSubscriptionWorker
-    ctable
     nullTracer
+    ctable
     (Just (Network.SockAddrInet 0 0))
     (Just (Network.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
     (const Nothing)
@@ -351,6 +352,7 @@ runShelleyClient producerAddrs _ ctable iversions = do
          ispIps     = fmap Network.addrAddress sockAddrs
        , ispValency = length sockAddrs
        })
+    (const retry)
     (\sock -> do
         connectToNode'
           (\(DictVersion codec) -> encodeTerm codec)
@@ -360,7 +362,6 @@ runShelleyClient producerAddrs _ ctable iversions = do
           (iversions)
           sock
     )
-    wait
 
 runByron
   :: ( CSL.HasConfigurations, ByronGiven )
