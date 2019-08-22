@@ -6,13 +6,13 @@ packages:
 extra-deps:
 
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: 38d601eb3dd20e8a27b7b7008aa90c70db911089
+    commit: 4ad81798402ce05655b37b31b0b67f444a2f0b91
     subdirs:
       - iohk-monitoring
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 1121579803319f01612583fc445c50b0a0ce0424
+    commit: 48fdef8e2cd9ca4d8745435ebff1916ce3556c70
     subdirs:
       - binary
       - binary/test
@@ -33,13 +33,13 @@ extra-deps:
       - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: 5c4e0b73f209631debd74795fa8cd4c92ed874fb
+    commit: 81c72dab5ef6974226b5158c474cf7b3caebaea2
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: ec96c64c665b741c17b4e38f611315bae9b0b054
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: 912c0639292e95bb72c0985fa06dfae820b01364
+    commit: 723d0ae621bfbc5b95b5813820badf90da22340f
     subdirs:
       - ouroboros-consensus
       - ouroboros-network

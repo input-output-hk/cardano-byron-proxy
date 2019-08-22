@@ -11,6 +11,7 @@ import Network.Socket (SockAddr)
 -- ToCBOR/FromCBOR UTxOValidationError, for local tx submission codec.
 import Cardano.Chain.UTxO.Validation ()
 import Crypto.Random (drgNew)
+import qualified Network.Socket as Socket
 
 import Ouroboros.Byron.Proxy.Block (Block)
 import Ouroboros.Consensus.Block (BlockProtocol)
@@ -28,6 +29,7 @@ import Ouroboros.Network.Server.ConnectionTable (ConnectionTable, newConnectionT
 import Ouroboros.Consensus.BlockchainTime (BlockchainTime)
 import Ouroboros.Consensus.ChainSyncClient (ClockSkew (..))
 import Ouroboros.Consensus.Node
+import Ouroboros.Consensus.NodeKernel
 import Ouroboros.Consensus.Node.Tracers (nullTracers)
 import Ouroboros.Consensus.Node.Run.Abstract (nodeBlockFetchSize, nodeBlockMatchesHeader)
 import Ouroboros.Consensus.NodeNetwork
@@ -53,12 +55,12 @@ withShelley
   -> NodeConfig (BlockProtocol (Block ByronConfig))
   -> NodeState (BlockProtocol (Block ByronConfig))
   -> BlockchainTime IO
-  -> (NodeKernel IO Peer (Block ByronConfig) -> ConnectionTable IO -> InitiatorVersions -> ResponderVersions -> IO t)
+  -> (NodeKernel IO Peer (Block ByronConfig) -> ConnectionTable IO Socket.SockAddr -> InitiatorVersions -> ResponderVersions -> IO t)
   -> IO t
 withShelley rr cdb conf state blockchainTime k = do
   ctable <- newConnectionTable
   let nodeParams = mkParams rr cdb conf state blockchainTime
-  kernel <- nodeKernel nodeParams
+  kernel <- initNodeKernel nodeParams
   let apps = consensusNetworkApps
         kernel
         nullProtocolTracers
@@ -83,8 +85,8 @@ mkParams
   -> NodeConfig (BlockProtocol (Block ByronConfig))
   -> NodeState (BlockProtocol (Block ByronConfig))
   -> BlockchainTime IO
-  -> NodeParams IO Peer (Block ByronConfig)
-mkParams rr cdb nconf nstate blockchainTime = NodeParams
+  -> NodeArgs IO Peer (Block ByronConfig)
+mkParams rr cdb nconf nstate blockchainTime = NodeArgs
   { tracers = nullTracers
   , registry = rr
   , maxClockSkew = ClockSkew 1
