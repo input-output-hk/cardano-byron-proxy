@@ -1,109 +1,142 @@
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTSyntax          #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE GADTSyntax #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
 module Ouroboros.Byron.Proxy.Main where
 
-import Control.Arrow (first)
-import Codec.CBOR.Decoding (Decoder)
-import qualified Codec.CBOR.Write as CBOR (toLazyByteString)
-import Control.Concurrent.Async (concurrently, race)
-import Control.Concurrent.STM (STM, atomically, check)
-import Control.Concurrent.STM.TBQueue (TBQueue, newTBQueueIO, readTBQueue,
-                                       writeTBQueue)
-import Control.Concurrent.STM.TVar (TVar, modifyTVar', newTVarIO, readTVar)
-import Control.Exception (Exception, bracket, throwIO)
-import Control.Monad (join, forM, void, when)
-import Control.Monad.Trans.Class (lift)
-import Control.Lens ((^.))
-import Control.Tracer (Tracer, traceWith)
-import Data.Conduit (ConduitT, (.|), await, runConduit, yield)
-import Data.Foldable (foldlM)
-import Data.List (maximumBy)
-import Data.List.NonEmpty (NonEmpty)
-import qualified Data.List.NonEmpty as NE
-import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
-import Data.Maybe (catMaybes, fromMaybe)
-import Data.Ord (comparing)
-import Data.Proxy (Proxy (..))
-import Data.Tagged (Tagged (..), tagWith, untag)
-import Data.Text (Text)
-import qualified Data.Text.Lazy.Builder as Text (Builder)
-import Numeric.Natural (Natural)
+import           Codec.CBOR.Decoding                       (Decoder)
+import qualified Codec.CBOR.Write                          as CBOR (toLazyByteString)
+import           Control.Arrow                             (first)
+import           Control.Concurrent.Async                  (concurrently, race)
+import           Control.Concurrent.STM                    (STM, atomically,
+                                                            check)
+import           Control.Concurrent.STM.TBQueue            (TBQueue,
+                                                            newTBQueueIO,
+                                                            readTBQueue,
+                                                            writeTBQueue)
+import           Control.Concurrent.STM.TVar               (TVar, modifyTVar',
+                                                            newTVarIO, readTVar)
+import           Control.Exception                         (Exception, bracket,
+                                                            throwIO)
+import           Control.Lens                              ((^.))
+import           Control.Monad                             (forM, join, void,
+                                                            when)
+import           Control.Monad.Trans.Class                 (lift)
+import           Control.Tracer                            (Tracer, traceWith)
+import           Data.Conduit                              (ConduitT, await,
+                                                            runConduit, yield,
+                                                            (.|))
+import           Data.Foldable                             (foldlM)
+import           Data.List                                 (maximumBy)
+import           Data.List.NonEmpty                        (NonEmpty)
+import qualified Data.List.NonEmpty                        as NE
+import           Data.Map.Strict                           (Map)
+import qualified Data.Map.Strict                           as Map
+import           Data.Maybe                                (catMaybes,
+                                                            fromMaybe)
+import           Data.Ord                                  (comparing)
+import           Data.Proxy                                (Proxy (..))
+import           Data.Tagged                               (Tagged (..),
+                                                            tagWith, untag)
+import           Data.Text                                 (Text)
+import qualified Data.Text.Lazy.Builder                    as Text (Builder)
+import           Numeric.Natural                           (Natural)
 
-import qualified Cardano.Binary as Binary
-import Cardano.BM.Data.Severity (Severity (..))
-import Cardano.Chain.Slotting (EpochSlots)
-import qualified Cardano.Chain.UTxO as Cardano
-import qualified Cardano.Crypto as Cardano (AbstractHash (..))
+import qualified Cardano.Binary                            as Binary
+import           Cardano.BM.Data.Severity                  (Severity (..))
+import           Cardano.Chain.Slotting                    (EpochSlots)
+import qualified Cardano.Chain.UTxO                        as Cardano
+import qualified Cardano.Crypto                            as Cardano (AbstractHash (..))
 
-import qualified Pos.Binary.Class as CSL (decodeFull, decodeFull', serialize)
-import qualified Pos.Chain.Block as Byron.Legacy (Block, BlockHeader, HeaderHash,
-                                                  MainBlockHeader, getBlockHeader,
-                                                  headerHash)
-import Pos.Chain.Delegation (ProxySKHeavy)
-import Pos.Chain.Ssc (MCCommitment (..), MCOpening (..), MCShares (..),
-                      MCVssCertificate (..), getCertId)
-import Pos.Chain.Txp (TxAux (..), TxId, TxMsgContents (..))
-import Pos.Chain.Update (BlockVersionData, UpdateProposal (..), UpdateVote (..))
-import Pos.Communication (NodeId)
-import Pos.Core (HasDifficulty(difficultyL), addressHash, getEpochOrSlot)
-import Pos.Core.Chrono (NewestFirst (..), OldestFirst (..))
-import qualified Pos.Crypto as CSL (AbstractHash (..))
-import Pos.Crypto (hash)
-import Pos.DB.Class (SerializedBlock)
-import Pos.DB.Block (GetHeadersFromManyToError (..), GetHashesRangeError (..))
-import Pos.Diffusion.Full (FullDiffusionConfiguration (..), diffusionLayerFull)
-import Pos.Infra.Diffusion.Types
+import qualified Pos.Binary.Class                          as CSL (decodeFull,
+                                                                   decodeFull',
+                                                                   serialize)
+import qualified Pos.Chain.Block                           as Byron.Legacy (Block,
+                                                                            BlockHeader,
+                                                                            HeaderHash,
+                                                                            MainBlockHeader,
+                                                                            getBlockHeader,
+                                                                            headerHash)
+import           Pos.Chain.Delegation                      (ProxySKHeavy)
+import           Pos.Chain.Ssc                             (MCCommitment (..),
+                                                            MCOpening (..),
+                                                            MCShares (..),
+                                                            MCVssCertificate (..),
+                                                            getCertId)
+import           Pos.Chain.Txp                             (TxAux (..), TxId,
+                                                            TxMsgContents (..))
+import           Pos.Chain.Update                          (BlockVersionData,
+                                                            UpdateProposal (..),
+                                                            UpdateVote (..))
+import           Pos.Communication                         (NodeId)
+import           Pos.Core                                  (HasDifficulty (difficultyL),
+                                                            addressHash,
+                                                            getEpochOrSlot)
+import           Pos.Core.Chrono                           (NewestFirst (..),
+                                                            OldestFirst (..))
+import           Pos.Crypto                                (hash)
+import qualified Pos.Crypto                                as CSL (AbstractHash (..))
+import           Pos.DB.Block                              (GetHashesRangeError (..),
+                                                            GetHeadersFromManyToError (..))
+import           Pos.DB.Class                              (SerializedBlock)
+import           Pos.Diffusion.Full                        (FullDiffusionConfiguration (..),
+                                                            diffusionLayerFull)
+import           Pos.Infra.Diffusion.Types
 -- An ancient relic. Needed for the network configuration type.
-import Pos.Infra.DHT.Real.Param (KademliaParams)
-import Pos.Infra.Network.Types (NetworkConfig (..))
-import Pos.Logic.Types hiding (streamBlocks)
-import qualified Pos.Logic.Types as Logic
+import           Pos.Infra.DHT.Real.Param                  (KademliaParams)
+import           Pos.Infra.Network.Types                   (NetworkConfig (..))
+import           Pos.Logic.Types                           hiding (streamBlocks)
+import qualified Pos.Logic.Types                           as Logic
 
-import Ouroboros.Byron.Proxy.Block (Block, Header, toSerializedBlock,
-                                    coerceHashFromLegacy, coerceHashToLegacy,
-                                    headerHash)
-import Ouroboros.Byron.Proxy.Index.Types (Index)
-import qualified Ouroboros.Byron.Proxy.Index.Types as Index
-import Ouroboros.Consensus.Block (getHeader)
-import Ouroboros.Consensus.Ledger.Byron (byronTx, byronTxId, encodeByronBlock, mkByronTx)
-import Ouroboros.Consensus.Node (getMempoolReader, getMempoolWriter)
-import Ouroboros.Consensus.Mempool.API (Mempool, ApplyTx, GenTx, GenTxId)
-import qualified Ouroboros.Consensus.Mempool.API as Mempool
-import Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
-import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-import Ouroboros.Network.Block (ChainUpdate (..), Point (..))
-import qualified Ouroboros.Network.Point as Point (block)
-import qualified Ouroboros.Network.TxSubmission.Inbound as Tx.In
-import qualified Ouroboros.Network.TxSubmission.Outbound as Tx.Out
-import Ouroboros.Storage.ChainDB.API (ChainDB)
-import qualified Ouroboros.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Byron.Proxy.Block               (Block, Header,
+                                                            coerceHashFromLegacy,
+                                                            coerceHashToLegacy,
+                                                            headerHash,
+                                                            toSerializedBlock)
+import           Ouroboros.Byron.Proxy.Index.Types         (Index)
+import qualified Ouroboros.Byron.Proxy.Index.Types         as Index
+import           Ouroboros.Consensus.Block                 (getHeader)
+import           Ouroboros.Consensus.Ledger.Byron          (byronTx, byronTxId,
+                                                            encodeByronBlock,
+                                                            mkByronTx)
+import           Ouroboros.Consensus.Mempool.API           (ApplyTx, GenTx,
+                                                            GenTxId, Mempool)
+import qualified Ouroboros.Consensus.Mempool.API           as Mempool
+import           Ouroboros.Consensus.Mempool.TxSeq         (TicketNo)
+import           Ouroboros.Consensus.NodeKernel            (getMempoolReader,
+                                                            getMempoolWriter)
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import           Ouroboros.Network.Block                   (ChainUpdate (..),
+                                                            Point (..))
+import qualified Ouroboros.Network.Point                   as Point (block)
+import qualified Ouroboros.Network.TxSubmission.Inbound    as Tx.In
+import qualified Ouroboros.Network.TxSubmission.Outbound   as Tx.Out
+import           Ouroboros.Storage.ChainDB.API             (ChainDB)
+import qualified Ouroboros.Storage.ChainDB.API             as ChainDB
 
 -- | Definitions required in order to run the Byron proxy.
 data ByronProxyConfig = ByronProxyConfig
   { -- TODO see if we can't derive the block version data from the database.
-    bpcAdoptedBVData     :: !BlockVersionData
+    bpcAdoptedBVData   :: !BlockVersionData
     -- | Number fo slots per epoch. Assumed to never change.
-  , bpcEpochSlots        :: !EpochSlots
-  , bpcNetworkConfig     :: !(NetworkConfig KademliaParams)
-  , bpcDiffusionConfig   :: !FullDiffusionConfiguration
+  , bpcEpochSlots      :: !EpochSlots
+  , bpcNetworkConfig   :: !(NetworkConfig KademliaParams)
+  , bpcDiffusionConfig :: !FullDiffusionConfiguration
     -- | Size of the send queue. Sending atomic (non-block data) to Byron
     -- will block if this queue is full.
-  , bpcSendQueueSize     :: !Natural
+  , bpcSendQueueSize   :: !Natural
     -- | Size of the recv queue.
     -- TODO should probably let it be unlimited, since there is no backpressure
     -- in the Byron diffusion layer anyway, so failing to clear this queue
     -- will still cause a memory leak.
-  , bpcRecvQueueSize     :: !Natural
+  , bpcRecvQueueSize   :: !Natural
   }
 
 -- | Interface presented by the Byron proxy.
@@ -353,9 +386,9 @@ sendAtomToByron diff atom = case atom of
 -- | Information about the best tip from the Byron network.
 data BestTip tip = BestTip
   { -- | This tip ...
-    btTip :: !tip
+    btTip   :: !tip
     -- | ... was announced by these peers.
-  , btPeers  :: !(NonEmpty NodeId)
+  , btPeers :: !(NonEmpty NodeId)
   }
 
 deriving instance Show tip => Show (BestTip tip)
@@ -391,8 +424,8 @@ compareHeaders bhl bhr = case Byron.Legacy.headerHash bhl == Byron.Legacy.header
 updateBestTip :: NodeId -> Byron.Legacy.BlockHeader -> BestTip Byron.Legacy.BlockHeader -> BestTip Byron.Legacy.BlockHeader
 updateBestTip peer header bt = case compareHeaders header (btTip bt) of
   NotBetter -> bt
-  Same -> bt { btPeers = NE.cons peer (btPeers bt) }
-  Better -> BestTip { btTip = header, btPeers = peer NE.:| [] }
+  Same      -> bt { btPeers = NE.cons peer (btPeers bt) }
+  Better    -> BestTip { btTip = header, btPeers = peer NE.:| [] }
 
 updateBestTipMaybe :: NodeId -> Byron.Legacy.BlockHeader -> Maybe (BestTip Byron.Legacy.BlockHeader) -> BestTip Byron.Legacy.BlockHeader
 updateBestTipMaybe peer header = maybe bt (updateBestTip peer header)
