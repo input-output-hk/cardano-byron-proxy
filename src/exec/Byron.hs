@@ -102,9 +102,10 @@ download tracer genesisBlock epochSlots db bp k = getStdGen >>= mainLoop Nothing
         -- Pick a peer from the list of announcers at random and download
         -- the chain.
         let (peer, rndGen') = pickRandom rndGen (btPeers bt)
+            remoteTipHash = CSL.headerHash (btTip bt)
         traceWith tracer $ mconcat
-          [ "Attempting to downloading chain with hash "
-          , Text.fromString (show tipHash)
+          [ "Attempting to download chain with hash "
+          , Text.fromString (show remoteTipHash)
           , " from "
           , Text.fromString (show peer)
           ]
@@ -112,7 +113,7 @@ download tracer genesisBlock epochSlots db bp k = getStdGen >>= mainLoop Nothing
         _ <- downloadChain
                bp
                peer
-               (CSL.headerHash (btTip bt))
+               remoteTipHash
                [tipHash]
                streamer
           `catch`
