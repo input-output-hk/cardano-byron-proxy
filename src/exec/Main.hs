@@ -87,7 +87,7 @@ import Ouroboros.Consensus.Node.ProtocolInfo.Byron (PBftSignatureThreshold (..),
            protocolInfoByron)
 import Ouroboros.Network.NodeToNode (withServer)
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (with)
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (withRegistry)
 import Ouroboros.Network.Block (SlotNo (..), Point (..))
 import Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point (Block (..))
@@ -527,7 +527,7 @@ main = do
         traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Opening database")
         -- Thread registry is needed by ChainDB and by the network protocols.
         -- I assume it's supposed to be shared?
-        ResourceRegistry.with $ \rr -> do
+        ResourceRegistry.withRegistry $ \rr -> do
           let -- TODO Grab this from the newGenesisConfig config
               securityParam = SecurityParam 2160
               protocolVersion = Cardano.ProtocolVersion 1 0 0
