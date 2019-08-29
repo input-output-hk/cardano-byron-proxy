@@ -86,7 +86,6 @@ import Ouroboros.Network.NodeToNode (withServer)
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (withRegistry)
 import Ouroboros.Network.Block (SlotNo (..), Point (..))
-import Ouroboros.Network.NodeToNode (withServer)
 import Ouroboros.Network.Point (WithOrigin (..))
 import qualified Ouroboros.Network.Point as Point (Block (..))
 import Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
@@ -532,7 +531,7 @@ main = do
               slotDuration = SlotLength (fromRational (toRational slotMs / 1000))
               systemStart = SystemStart (Cardano.gdStartTime (Cardano.configGenesisData newGenesisConfig))
           btime <- realBlockchainTime rr slotDuration systemStart
-          withDB dbc dbTracer indexTracer rr securityParam nodeConfig extLedgerState $ \idx cdb -> do
+          withDB dbc dbTracer indexTracer rr nodeConfig extLedgerState $ \idx cdb -> do
             traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
             Shelley.withShelley rr cdb nodeConfig nodeState btime $ \kernel ctable iversions rversions -> do
               let server = runShelleyServer (soLocalAddress      (bpoShelleyOptions bpo)) rr ctable rversions

@@ -33,17 +33,12 @@ import           Control.Arrow                             (first)
 import           Control.Concurrent.Async                  (concurrently, race)
 import           Control.Concurrent.STM                    (STM, atomically,
                                                             check)
-import           Control.Concurrent.STM.TBQueue            (TBQueue,
-                                                            newTBQueueIO,
-                                                            readTBQueue,
-                                                            writeTBQueue)
 import           Control.Concurrent.STM.TVar               (TVar, modifyTVar',
                                                             newTVarIO, readTVar)
 import           Control.Exception                         (Exception, bracket,
                                                             throwIO)
 import           Control.Lens                              ((^.))
-import           Control.Monad                             (forM, join, void,
-                                                            when)
+import           Control.Monad                             (forM, join, when)
 import           Control.Monad.Trans.Class                 (lift)
 import           Control.Tracer                            (Tracer, traceWith)
 import           Data.Conduit                              (ConduitT, await,
@@ -63,7 +58,8 @@ import           Data.Tagged                               (Tagged (..),
                                                             tagWith, untag)
 import           Data.Text                                 (Text)
 import qualified Data.Text.Lazy.Builder                    as Text (Builder)
-import           Numeric.Natural                           (Natural)
+import           Data.Word                                 (Word32)
+import           Data.Time.Units                           (fromMicroseconds)
 
 import qualified Cardano.Binary                            as Binary
 import           Cardano.BM.Data.Severity                  (Severity (..))
@@ -80,7 +76,8 @@ import qualified Pos.Chain.Block                           as Byron.Legacy (Bloc
                                                                             MainBlockHeader,
                                                                             getBlockHeader,
                                                                             headerHash)
-import           Pos.Chain.Delegation                      (ProxySKHeavy)
+import qualified Pos.Chain.Block                           as CSL (BlockConfiguration (..))
+import qualified Pos.Chain.Genesis                         as CSL.Genesis
 import           Pos.Chain.Ssc                             (MCCommitment (..),
                                                             MCOpening (..),
                                                             MCShares (..),
@@ -91,7 +88,10 @@ import           Pos.Chain.Txp                             (TxAux (..), TxId,
 import           Pos.Chain.Update                          (BlockVersionData,
                                                             UpdateProposal (..),
                                                             UpdateVote (..))
+import qualified Pos.Chain.Update                          as CSL (UpdateConfiguration,
+                                                                   lastKnownBlockVersion)
 import           Pos.Communication                         (NodeId)
+import qualified Pos.Configuration                         as CSL (NodeConfiguration (..))
 import           Pos.Core                                  (HasDifficulty (difficultyL),
                                                             addressHash,
                                                             getEpochOrSlot)
@@ -110,6 +110,9 @@ import           Pos.Infra.DHT.Real.Param                  (KademliaParams)
 import           Pos.Infra.Network.Types                   (NetworkConfig (..))
 import           Pos.Logic.Types                           hiding (streamBlocks)
 import qualified Pos.Logic.Types                           as Logic
+import           Pos.Util.Trace                            (Trace)
+import           Pos.Util.Trace.Named                      (LogNamed)
+import qualified Pos.Util.Wlog                             as Wlog (Severity)
 
 import           Ouroboros.Byron.Proxy.Block               (Block, Header,
                                                             coerceHashFromLegacy,
@@ -118,6 +121,7 @@ import           Ouroboros.Byron.Proxy.Block               (Block, Header,
                                                             toSerializedBlock)
 import           Ouroboros.Byron.Proxy.Index.Types         (Index)
 import qualified Ouroboros.Byron.Proxy.Index.Types         as Index
+import           Ouroboros.Byron.Proxy.Genesis.Convert     (convertEpochSlots)
 import           Ouroboros.Consensus.Block                 (getHeader)
 import           Ouroboros.Consensus.Ledger.Byron          (byronTx, byronTxId,
                                                             encodeByronBlock,
