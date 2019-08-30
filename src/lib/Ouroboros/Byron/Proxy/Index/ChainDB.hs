@@ -5,7 +5,6 @@ module Ouroboros.Byron.Proxy.Index.ChainDB
   ( trackChainDB
   ) where
 
-import Control.Concurrent.Async (race)
 import Control.Exception (bracket)
 import Data.Word (Word64)
 
@@ -54,12 +53,7 @@ trackReader idx reader = do
       trackReader idx reader
     Nothing -> pure ()
 
--- | Have an Index track a ChainDB using its Reader API for the duration of
--- some monadic action.
---
--- It will spawn a thread to do the index updates. This must be the only
--- index writer. It is run by `race` with the action, so exceptions in either
--- the action or the writer thread will be re-thrown here.
+-- | Have an Index track a ChainDB using its Reader API.
 --
 -- If the tip of the index is in the ChainDB, then no work must be done in the
 -- beginning. But if it's not in the ChainDB, there will have to be a rollback
@@ -68,14 +62,13 @@ trackReader idx reader = do
 -- ChainDB. If none are in it, then the entire index will be rebuild (rollback
 -- to Origin).
 trackChainDB
-  :: forall blk t .
+  :: forall blk void .
      ResourceRegistry IO
   -> Index IO (Header blk)
   -> ChainDB IO blk
   -> SecurityParam
-  -> IO t
-  -> IO t
-trackChainDB rr idx cdb k act = bracket acquireReader releaseReader $ \rdr -> do
+  -> IO void
+trackChainDB rr idx cdb k = bracket acquireReader releaseReader $ \rdr -> do
     checkpoints <- Index.streamFromTip idx checkpointsFold
     mPoint <- ChainDB.readerForward rdr checkpoints
     case mPoint of
@@ -91,10 +84,7 @@ trackChainDB rr idx cdb k act = bracket acquireReader releaseReader $ \rdr -> do
     -- First, block until the index is caught up to the tip ...
     trackReader idx rdr
     -- ... then attempt to stay in sync.
-    outcome <- race (trackReaderBlocking idx rdr) act
-    case outcome of
-      Left impossible -> impossible
-      Right t -> pure t
+    trackReaderBlocking idx rdr
   where
   acquireReader :: IO (Reader IO blk (Header blk))
   acquireReader = ChainDB.deserialiseReader <$> ChainDB.newHeaderReader cdb rr

@@ -24,6 +24,7 @@ import           Ouroboros.Consensus.Ledger.Byron.Config   (pbftEpochSlots)
 import           Ouroboros.Consensus.Ledger.Extended       (ExtLedgerState)
 import           Ouroboros.Consensus.Node                  (withChainDB)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 import           Ouroboros.Consensus.Protocol              (NodeConfig,
                                                             pbftExtConfig)
 import           Ouroboros.Consensus.Protocol.Abstract     (protocolSecurityParam)
@@ -61,7 +62,8 @@ withDB dbOptions dbTracer indexTracer rr btime nodeConfig extLedgerState k = do
   withChainDB dbTracer rr btime (dbFilePath dbOptions) nodeConfig extLedgerState customiseArgs
     $ \cdb ->
       Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx -> do
-        Index.trackChainDB rr idx cdb (protocolSecurityParam nodeConfig) (k idx cdb)
+        _ <- ResourceRegistry.forkLinkedThread rr $ Index.trackChainDB rr idx cdb (protocolSecurityParam nodeConfig)
+        k idx cdb
 
   where
 
