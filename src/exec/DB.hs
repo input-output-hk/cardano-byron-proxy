@@ -130,5 +130,7 @@ withDB dbOptions dbTracer indexTracer rr securityParam nodeConfig extLedgerState
         }
   bracket (ChainDB.openDB chainDBArgs) ChainDB.closeDB $ \cdb ->
     Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx -> do
-      _ <- ResourceRegistry.forkThread rr $ Index.trackChainDB rr idx cdb
+      -- TBD do we need withRegistry in there or not?
+      -- _ <- ResourceRegistry.forkLinkedThread rr $ ResourceRegistry.withRegistry $ \rr' -> Index.trackChainDB rr' idx cdb
+      _ <- ResourceRegistry.forkLinkedThread rr $ Index.trackChainDB rr idx cdb
       k idx cdb
