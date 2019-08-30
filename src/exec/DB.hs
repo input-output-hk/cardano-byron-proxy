@@ -1,46 +1,47 @@
-{-# LANGUAGE GADTSyntax #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE GADTSyntax          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE FlexibleContexts #-}
 
 module DB
   ( DBConfig (..)
   , withDB
   ) where
 
-import Control.Exception (bracket)
-import qualified Data.Reflection as Reflection (given)
-import Control.Tracer (Tracer)
-import Data.Time.Clock (secondsToDiffTime)
-import qualified System.Directory (createDirectoryIfMissing)
-import System.FilePath ((</>))
+import           Control.Exception                         (bracket)
+import           Control.Tracer                            (Tracer)
+import qualified Data.Reflection                           as Reflection (given)
+import           Data.Time.Clock                           (secondsToDiffTime)
+import qualified System.Directory                          (createDirectoryIfMissing)
+import           System.FilePath                           ((</>))
 
-import qualified Cardano.Chain.Slotting as Cardano (EpochSlots (..))
+import qualified Cardano.Chain.Slotting                    as Cardano (EpochSlots (..))
 
-import           Ouroboros.Byron.Proxy.Block (Block, isEBB)
-import           Ouroboros.Byron.Proxy.Index.Types (Index)
-import qualified Ouroboros.Byron.Proxy.Index.ChainDB as Index (trackChainDB)
-import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Sqlite
-import Ouroboros.Consensus.Block (BlockProtocol, GetHeader (Header))
-import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
-import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
-import qualified Ouroboros.Consensus.Ledger.Byron as Byron
-import Ouroboros.Consensus.Ledger.Extended (ExtLedgerState)
-import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
-import Ouroboros.Consensus.Protocol (NodeConfig)
-import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry, forkLinked)
+import           Ouroboros.Byron.Proxy.Block               (Block, isEBB)
+import qualified Ouroboros.Byron.Proxy.Index.ChainDB       as Index (trackChainDB)
+import qualified Ouroboros.Byron.Proxy.Index.Sqlite        as Sqlite
+import           Ouroboros.Byron.Proxy.Index.Types         (Index)
+import           Ouroboros.Consensus.Block                 (BlockProtocol,
+                                                            GetHeader (Header))
+import           Ouroboros.Consensus.Ledger.Byron          (ByronGiven)
+import qualified Ouroboros.Consensus.Ledger.Byron          as Byron
+import           Ouroboros.Consensus.Ledger.Byron.Config   (ByronConfig)
+import           Ouroboros.Consensus.Ledger.Extended       (ExtLedgerState)
+import           Ouroboros.Consensus.Protocol              (NodeConfig)
+import           Ouroboros.Consensus.Protocol.Abstract     (SecurityParam (..))
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
-import Ouroboros.Storage.FS.API.Types (MountPoint (..))
-import Ouroboros.Storage.FS.IO (ioHasFS)
-import Ouroboros.Storage.Common (EpochSize (..))
-import Ouroboros.Storage.ChainDB.API (ChainDB)
-import qualified Ouroboros.Storage.ChainDB.API as ChainDB
-import qualified Ouroboros.Storage.ChainDB.Impl as ChainDB
-import Ouroboros.Storage.EpochInfo.Impl (newEpochInfo)
-import Ouroboros.Storage.ChainDB.Impl.Args (ChainDbArgs (..))
-import Ouroboros.Storage.ImmutableDB.Types (ValidationPolicy (..))
-import Ouroboros.Storage.LedgerDB.DiskPolicy (DiskPolicy (..))
-import Ouroboros.Storage.LedgerDB.MemPolicy (defaultMemPolicy)
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH
+import           Ouroboros.Storage.ChainDB.API             (ChainDB)
+import qualified Ouroboros.Storage.ChainDB.API             as ChainDB
+import qualified Ouroboros.Storage.ChainDB.Impl            as ChainDB
+import           Ouroboros.Storage.ChainDB.Impl.Args       (ChainDbArgs (..))
+import           Ouroboros.Storage.Common                  (EpochSize (..))
+import           Ouroboros.Storage.EpochInfo.Impl          (newEpochInfo)
+import           Ouroboros.Storage.FS.API.Types            (MountPoint (..))
+import           Ouroboros.Storage.FS.IO                   (ioHasFS)
+import           Ouroboros.Storage.ImmutableDB.Types       (ValidationPolicy (..))
+import           Ouroboros.Storage.LedgerDB.DiskPolicy     (DiskPolicy (..))
+import           Ouroboros.Storage.LedgerDB.MemPolicy      (defaultMemPolicy)
+import qualified Ouroboros.Storage.Util.ErrorHandling      as EH
 
 data DBConfig = DBConfig
   { dbFilePath    :: !FilePath
@@ -129,5 +130,7 @@ withDB dbOptions dbTracer indexTracer rr securityParam nodeConfig extLedgerState
         }
   bracket (ChainDB.openDB chainDBArgs) ChainDB.closeDB $ \cdb ->
     Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx -> do
-      _ <- forkLinked rr $ ResourceRegistry.with $ \rr' -> Index.trackChainDB rr' idx cdb
+      -- TBD do we need withRegistry in there or not?
+      -- _ <- ResourceRegistry.forkLinkedThread rr $ ResourceRegistry.withRegistry $ \rr' -> Index.trackChainDB rr' idx cdb
+      _ <- ResourceRegistry.forkLinkedThread rr $ Index.trackChainDB rr idx cdb
       k idx cdb
