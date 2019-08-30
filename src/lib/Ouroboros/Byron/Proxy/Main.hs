@@ -113,6 +113,7 @@ import           Ouroboros.Consensus.Mempool.TxSeq         (TicketNo)
 import           Ouroboros.Consensus.NodeKernel            (getMempoolReader,
                                                             getMempoolWriter)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
+import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 import           Ouroboros.Network.Block                   (ChainUpdate (..),
                                                             Point (..))
 import qualified Ouroboros.Network.Point                   as Point (block)
@@ -700,13 +701,12 @@ withByronProxy
   :: ( ApplyTx (Block cfg) )
   => Tracer IO (Severity, Text.Builder)
   -> ByronProxyConfig
-  -> ResourceRegistry IO
   -> Index IO (Header (Block cfg))
   -> ChainDB IO (Block cfg)
   -> Mempool IO (Block cfg) TicketNo
   -> (ByronProxy -> IO t)
   -> IO t
-withByronProxy trace bpc rr idx db mempool k = do
+withByronProxy trace bpc idx db mempool k = do
 
     -- The best announced block header, and the identifiers of every peer which
     -- announced it. `Nothing` whenever there is no known announcement. It will
@@ -807,7 +807,8 @@ withByronProxy trace bpc rr idx db mempool k = do
           , Logic.getBlockHeader = bbsGetBlockHeader epochSlots idx db blockDecodeError
           -- MsgGetHeaders conversation
           , getBlockHeaders      = \mLimit checkpoints mTip -> do
-              result <- bbsGetBlockHeaders epochSlots rr idx db blockDecodeError mLimit checkpoints mTip
+              result <- ResourceRegistry.withRegistry $ \rr ->
+                bbsGetBlockHeaders epochSlots rr idx db blockDecodeError mLimit checkpoints mTip
               case result of
                 Nothing -> pure $ Left $ GHFBadInput ""
                 Just it -> pure $ Right it
@@ -825,7 +826,8 @@ withByronProxy trace bpc rr idx db mempool k = do
                   Right (legacyBlk :: Byron.Legacy.Block) -> pure legacyBlk
           -- GetBlocks conversation
           , getHashesRange       = \mLimit from to -> do
-              result <- bbsGetHashesRange rr idx db blockDecodeError mLimit from to
+              result <- ResourceRegistry.withRegistry $ \rr ->
+                bbsGetHashesRange rr idx db blockDecodeError mLimit from to
               case result of
                 Nothing -> pure $ Left $ GHRBadInput ""
                 Just it -> pure $ Right it
@@ -837,8 +839,9 @@ withByronProxy trace bpc rr idx db mempool k = do
           -- at the given start hash! This is not documented in cardano-sl.
           -- That's done by giving `False` to `bbsStreamBlocks`, which uses
           -- the `ChainDB` `Reader` API to do streaming. It stops at a fork.
-          , Logic.streamBlocks   = \hh l ->
-              bbsStreamBlocks rr idx db blockDecodeError hh (pure . toSerializedBlock) False l
+          , Logic.streamBlocks   = \hh l -> do
+              ResourceRegistry.withRegistry $ \rr ->
+                bbsStreamBlocks rr idx db blockDecodeError hh (pure . toSerializedBlock) False l
           }
 
         networkConfig = bpcNetworkConfig bpc
