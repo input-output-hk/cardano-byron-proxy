@@ -9,7 +9,23 @@
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
-module Ouroboros.Byron.Proxy.Main where
+{-|
+Module      : Ouroboros.Byron.Proxy.Main
+Description : Definition of the Byron proxy interface and implementation.
+
+The 'ByronProxy' type gives the interface to a Byron network.
+'withByronProxy' will create one, allowing the caller to see the tips-of-chains
+of its Byron peers, to download one of these chains, and to announce its own
+tip-of-chain header to its peers.
+-}
+
+module Ouroboros.Byron.Proxy.Main
+  ( ByronProxyConfig (..)
+  , configFromCSLConfigs
+  , ByronProxy (..)
+  , withByronProxy
+  , BestTip (..)
+  ) where
 
 import           Codec.CBOR.Decoding                       (Decoder)
 import qualified Codec.CBOR.Write                          as CBOR (toLazyByteString)
@@ -17,17 +33,12 @@ import           Control.Arrow                             (first)
 import           Control.Concurrent.Async                  (concurrently, race)
 import           Control.Concurrent.STM                    (STM, atomically,
                                                             check)
-import           Control.Concurrent.STM.TBQueue            (TBQueue,
-                                                            newTBQueueIO,
-                                                            readTBQueue,
-                                                            writeTBQueue)
 import           Control.Concurrent.STM.TVar               (TVar, modifyTVar',
                                                             newTVarIO, readTVar)
 import           Control.Exception                         (Exception, bracket,
                                                             throwIO)
 import           Control.Lens                              ((^.))
-import           Control.Monad                             (forM, join, void,
-                                                            when)
+import           Control.Monad                             (forM, join, when)
 import           Control.Monad.Trans.Class                 (lift)
 import           Control.Tracer                            (Tracer, traceWith)
 import           Data.Conduit                              (ConduitT, await,
@@ -47,7 +58,8 @@ import           Data.Tagged                               (Tagged (..),
                                                             tagWith, untag)
 import           Data.Text                                 (Text)
 import qualified Data.Text.Lazy.Builder                    as Text (Builder)
-import           Numeric.Natural                           (Natural)
+import           Data.Word                                 (Word32)
+import           Data.Time.Units                           (fromMicroseconds)
 
 import qualified Cardano.Binary                            as Binary
 import           Cardano.BM.Data.Severity                  (Severity (..))
@@ -64,7 +76,8 @@ import qualified Pos.Chain.Block                           as Byron.Legacy (Bloc
                                                                             MainBlockHeader,
                                                                             getBlockHeader,
                                                                             headerHash)
-import           Pos.Chain.Delegation                      (ProxySKHeavy)
+import qualified Pos.Chain.Block                           as CSL (BlockConfiguration (..))
+import qualified Pos.Chain.Genesis                         as CSL.Genesis
 import           Pos.Chain.Ssc                             (MCCommitment (..),
                                                             MCOpening (..),
                                                             MCShares (..),
@@ -75,7 +88,10 @@ import           Pos.Chain.Txp                             (TxAux (..), TxId,
 import           Pos.Chain.Update                          (BlockVersionData,
                                                             UpdateProposal (..),
                                                             UpdateVote (..))
+import qualified Pos.Chain.Update                          as CSL (UpdateConfiguration,
+                                                                   lastKnownBlockVersion)
 import           Pos.Communication                         (NodeId)
+import qualified Pos.Configuration                         as CSL (NodeConfiguration (..))
 import           Pos.Core                                  (HasDifficulty (difficultyL),
                                                             addressHash,
                                                             getEpochOrSlot)
@@ -94,6 +110,9 @@ import           Pos.Infra.DHT.Real.Param                  (KademliaParams)
 import           Pos.Infra.Network.Types                   (NetworkConfig (..))
 import           Pos.Logic.Types                           hiding (streamBlocks)
 import qualified Pos.Logic.Types                           as Logic
+import           Pos.Util.Trace                            (Trace)
+import           Pos.Util.Trace.Named                      (LogNamed)
+import qualified Pos.Util.Wlog                             as Wlog (Severity)
 
 import           Ouroboros.Byron.Proxy.Block               (Block, Header,
                                                             coerceHashFromLegacy,
@@ -102,6 +121,7 @@ import           Ouroboros.Byron.Proxy.Block               (Block, Header,
                                                             toSerializedBlock)
 import           Ouroboros.Byron.Proxy.Index.Types         (Index)
 import qualified Ouroboros.Byron.Proxy.Index.Types         as Index
+import           Ouroboros.Byron.Proxy.Genesis.Convert     (convertEpochSlots)
 import           Ouroboros.Consensus.Block                 (getHeader)
 import           Ouroboros.Consensus.Ledger.Byron          (byronTx, byronTxId,
                                                             encodeByronBlock,
@@ -122,23 +142,60 @@ import qualified Ouroboros.Network.TxSubmission.Outbound   as Tx.Out
 import           Ouroboros.Storage.ChainDB.API             (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API             as ChainDB
 
--- | Definitions required in order to run the Byron proxy.
+-- | Configuration used to get a 'ByronProxy'.
+-- 'configFromGenesis' will make one from a genesis configuration.
 data ByronProxyConfig = ByronProxyConfig
-  { -- TODO see if we can't derive the block version data from the database.
-    bpcAdoptedBVData   :: !BlockVersionData
+  { -- | The Byron Logic layer needs the BlockVersionData. Technically this
+    -- is not constant over a whole blockchain: it can be changed by an update.
+    -- However, in cardano-byron-proxy it is only used to determine message
+    -- size limits on Byron protocols, so as long as header, block, and tx
+    -- size limits do not change, it's ok.
+    --
+    -- To get a BlockVersionData,
+    -- Pos.Chain.Genesis.Config.configBlockVersionData can be used on a Byron
+    -- genesis configuration.
+    bpcAdoptedBVData     :: !BlockVersionData
     -- | Number fo slots per epoch. Assumed to never change.
-  , bpcEpochSlots      :: !EpochSlots
-  , bpcNetworkConfig   :: !(NetworkConfig KademliaParams)
-  , bpcDiffusionConfig :: !FullDiffusionConfiguration
-    -- | Size of the send queue. Sending atomic (non-block data) to Byron
-    -- will block if this queue is full.
-  , bpcSendQueueSize   :: !Natural
-    -- | Size of the recv queue.
-    -- TODO should probably let it be unlimited, since there is no backpressure
-    -- in the Byron diffusion layer anyway, so failing to clear this queue
-    -- will still cause a memory leak.
-  , bpcRecvQueueSize   :: !Natural
+  , bpcEpochSlots        :: !EpochSlots
+    -- | Byron network configuration. To get one, consider using
+    -- Pos.Infra.Network.CLI.intNetworkConfigOpts
+  , bpcNetworkConfig     :: !(NetworkConfig KademliaParams)
+    -- | Configuration for the Byron Diffusion layer (i.e. the network part).
+  , bpcDiffusionConfig   :: !FullDiffusionConfiguration
   }
+
+-- | Make a 'ByronProxyConfig' using cardano-sl configuration types.
+-- This will ensure that the proxy is configured in such a way that it is
+-- able to communicate with a Byron peer using the same config.
+configFromCSLConfigs
+  :: CSL.Genesis.Config
+  -> CSL.BlockConfiguration
+  -> CSL.UpdateConfiguration
+  -> CSL.NodeConfiguration
+  -> NetworkConfig KademliaParams
+  -> Word32 -- ^ Batch size for block streaming.
+  -> Trace IO (LogNamed (Wlog.Severity, Text))
+  -> ByronProxyConfig
+configFromCSLConfigs genesisConfig blockConfig updateConfig nodeConfig networkConfig batchSize trace = ByronProxyConfig
+  { bpcAdoptedBVData   = CSL.Genesis.configBlockVersionData genesisConfig
+  , bpcEpochSlots      = epochSlots
+  , bpcNetworkConfig   = networkConfig
+  , bpcDiffusionConfig = FullDiffusionConfiguration
+      { fdcProtocolMagic          = CSL.Genesis.configProtocolMagic genesisConfig
+      , fdcProtocolConstants      = CSL.Genesis.configProtocolConstants genesisConfig
+        -- fromIntergal :: Int -> Word
+      , fdcRecoveryHeadersMessage = fromIntegral $ CSL.ccRecoveryHeadersMessage blockConfig
+      , fdcLastKnownBlockVersion  = CSL.lastKnownBlockVersion updateConfig
+      , fdcConvEstablishTimeout   = timeout
+        -- fromIntegral :: Int -> Word32
+      , fdcStreamWindow           = fromIntegral $ CSL.ccStreamWindow blockConfig
+      , fdcBatchSize              = batchSize
+      , fdcTrace                  = trace
+      }
+  }
+  where
+  epochSlots = convertEpochSlots (CSL.Genesis.configEpochSlots genesisConfig)
+  timeout = fromMicroseconds (1000 * fromIntegral (CSL.ccNetworkConnectionTimeout nodeConfig))
 
 -- | Interface presented by the Byron proxy.
 data ByronProxy = ByronProxy
@@ -156,26 +213,18 @@ data ByronProxy = ByronProxy
     -- Those data can be taken from 'bestTip', but of course may no longer be
     -- correct at the time of the call.
     --
-    -- TODO deal with the `Maybe t` in this type. Should it be there? It's
-    -- used to indicate whether streaming is available, for fallback to
-    -- batching.
-    --
     -- FIXME should not use legacy header hash type here.
   , downloadChain :: forall t .
                      NodeId
                   -> Byron.Legacy.HeaderHash   -- of tip to request
                   -> [Byron.Legacy.HeaderHash] -- of checkpoints
                   -> StreamBlocks Byron.Legacy.Block IO t
-                  -> IO (Maybe t)
+                  -> IO t
     -- | Make Byron peers aware of this chain. It's expected that they will
-    -- request it, which will be served by some database, so the blocks for
-    -- this chain should be in it.
+    -- request it if it's better than their own, and the download will be
+    -- served by a backing ChainDB, so the blocks for this chain should be in
+    -- it.
   , announceChain :: Byron.Legacy.MainBlockHeader -> IO ()
-    -- | Take the next atom from the Byron network (non-block data).
-  , recvAtom      :: STM Atom
-    -- | Send an atom to the Byron network. It's in STM because the send is
-    -- performed asynchronously.
-  , sendAtom      :: Atom -> STM ()
   }
 
 taggedKeyValNoOp
@@ -345,44 +394,6 @@ fromByronTxAux txAux = case Binary.decodeFullAnnotatedBytes "TxAux" decoder cslB
     cslBytes = CSL.serialize txAux
     decoder :: Decoder s (Cardano.ATxAux Binary.ByteSpan)
     decoder  = Binary.fromCBOR
-
--- | Atoms are data which are not blocks.
-data Atom where
-  Transaction    :: TxMsgContents -> Atom
-  UpdateProposal :: (UpdateProposal, [UpdateVote]) -> Atom
-  UpdateVote     :: UpdateVote -> Atom
-  Commitment     :: MCCommitment -> Atom
-  Opening        :: MCOpening -> Atom
-  Shares         :: MCShares -> Atom
-  VssCertificate :: MCVssCertificate -> Atom
-  Delegation     :: ProxySKHeavy -> Atom
-
-deriving instance Show Atom
-
--- To get atoms from Shelley to Byron we put them into the pool and then
--- send them using the diffusion layer.
---
--- To get them from Byron to Shelley we use the relay mechanism built in to
--- the diffusion layer: it will put the thing into the relevant pool, then
--- make and deposit an `Atom` into a queue.
-
-sendAtomToByron :: Diffusion IO -> Atom -> IO ()
-sendAtomToByron diff atom = case atom of
-
-  Transaction tx -> void $ sendTx diff (getTxMsgContents tx)
-
-  UpdateProposal (up, uvs) -> sendUpdateProposal diff (hash up) up uvs
-  UpdateVote uv            -> sendVote diff uv
-
-  Opening (MCOpening sid opening)      -> sendSscOpening diff sid opening
-  Shares (MCShares sid shares)         -> sendSscShares diff sid shares
-  VssCertificate (MCVssCertificate vc) -> sendSscCert diff (getCertId vc) vc
-  Commitment (MCCommitment commitment) -> sendSscCommitment diff sid commitment
-    where
-    (pk, _, _) = commitment
-    sid = addressHash pk
-
-  Delegation psk -> sendPskHeavy diff psk
 
 -- | Information about the best tip from the Byron network.
 data BestTip tip = BestTip
@@ -713,13 +724,6 @@ withByronProxy trace bpc idx db mempool k = do
     -- never go from `Just` to `Nothing`, it only starts as `Nothing`.
     tipsTVar :: TVar (Maybe (BestTip Byron.Legacy.BlockHeader)) <- newTVarIO Nothing
 
-    -- Send and receive bounded queues for atomic data (non-block).
-    -- The receive queue is populated by the relay system by way of the logic
-    -- layer. The send queue is emptied by a thread spawned here which uses
-    -- the diffusion layer to send (ultimately by way of the outbound queue).
-    atomRecvQueue :: TBQueue Atom <- newTBQueueIO (bpcRecvQueueSize bpc)
-    atomSendQueue :: TBQueue Atom <- newTBQueueIO (bpcSendQueueSize bpc)
-
     -- Associates Byron transaction identifiers (their hashes) with Shelley
     -- mempool ticket numbers. Needed because the Byron relay system is
     -- random access by TxId.
@@ -729,10 +733,20 @@ withByronProxy trace bpc idx db mempool k = do
     let byronProxy :: Diffusion IO -> ByronProxy
         byronProxy diff = ByronProxy
           { bestTip = takeBestTip
-          , downloadChain = streamBlocks diff
+          , downloadChain = \peer tipHash checkpointHashes sbK -> do
+              streamResult <- streamBlocks diff peer tipHash checkpointHashes sbK
+              case streamResult of
+                Just t  -> pure t
+                -- Nothing means streaming is not supported. Fall back to
+                -- batching. This will do one batch then finish the
+                -- StreamBlocks callback. That may not give all of the
+                -- blocks requested.
+                Nothing -> do
+                  batchResult <- getBlocks diff peer tipHash checkpointHashes
+                  case getOldestFirst batchResult of
+                    [] -> streamBlocksDone sbK
+                    (b : bs) -> streamBlocksMore sbK (b NE.:| bs) >>= streamBlocksDone
           , announceChain = announceBlockHeader diff
-          , recvAtom = readTBQueue atomRecvQueue
-          , sendAtom = writeTBQueue atomSendQueue
           }
 
         epochSlots :: EpochSlots
@@ -741,19 +755,10 @@ withByronProxy trace bpc idx db mempool k = do
         takeBestTip :: STM (Maybe (BestTip Byron.Legacy.BlockHeader))
         takeBestTip = readTVar tipsTVar
 
-        -- FIXME this probably isn't necessary anymore.
-        -- Transactions are sent indirectly, by adding them to the mempool
-        sendingThread :: forall x . Diffusion IO -> IO x
-        sendingThread diff = do
-          atom <- atomically $ readTBQueue atomSendQueue
-          sendAtomToByron diff atom
-          sendingThread diff
-
         background :: forall x . Diffusion IO -> IO x
         background diff = fmap (\(x, _) -> x) $
-          concurrently (sendingThread diff) $
-            concurrently (sendTxsFromMempool mempool diff)
-                         (updateMempoolIdMap mempool txTicketMapVar)
+          concurrently (sendTxsFromMempool mempool diff)
+                       (updateMempoolIdMap mempool txTicketMapVar)
 
         blockDecodeError :: forall x . Text -> IO x
         blockDecodeError text = throwIO $ MalformedBlock text
