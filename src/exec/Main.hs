@@ -370,12 +370,11 @@ runByron
   -> CSL.Genesis.Config
   -> Cardano.ProtocolMagicId
   -> Cardano.EpochSlots
-  -> ResourceRegistry IO
   -> Index IO (Header (Block ByronConfig))
   -> ChainDB IO (Block ByronConfig)
   -> Mempool IO (Block ByronConfig) TicketNo
   -> IO ()
-runByron tracer byronOptions genesisConfig _ epochSlots rr idx db mempool = do
+runByron tracer byronOptions genesisConfig _ epochSlots idx db mempool = do
     let cslTrace = mkCSLTrace tracer
     -- Get the `NetworkConfig` from the options
     networkConfig <- CSL.intNetworkConfigOpts
@@ -415,7 +414,7 @@ runByron tracer byronOptions genesisConfig _ epochSlots rr idx db mempool = do
     -- It would be much better if intNetworkConfigOpts set up the static
     -- peers to begin with, but that's just not how it is.
     withAsync (CSL.launchStaticConfigMonitoring (ncTopology networkConfig)) $ \monitorThread ->
-      withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc rr idx db mempool $ \bp -> do
+      withByronProxy (contramap (\(a, b) -> ("", a, b)) tracer) bpc idx db mempool $ \bp -> do
         link monitorThread
         byronClient genesisBlock bp
 
@@ -561,7 +560,6 @@ main = do
                       oldGenesisConfig
                       protocolMagic
                       epochSlots
-                      rr
                       idx
                       cdb
                       (getMempool kernel)
