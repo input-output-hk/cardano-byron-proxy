@@ -27,8 +27,7 @@ import qualified Ouroboros.Consensus.Ledger.Byron          as Byron
 import           Ouroboros.Consensus.Ledger.Byron.Config   (ByronConfig)
 import           Ouroboros.Consensus.Ledger.Extended       (ExtLedgerState)
 import           Ouroboros.Consensus.Protocol              (NodeConfig)
-import           Ouroboros.Consensus.Protocol.Abstract     (SecurityParam (..),
-                                                            protocolSecurityParam)
+import           Ouroboros.Consensus.Protocol.Abstract     (protocolSecurityParam)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 import           Ouroboros.Storage.ChainDB.API             (ChainDB)
