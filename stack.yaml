@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/4c48d34fd60991bb1b9168d293cfe31a975d858e/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/b83730dccab14111d62144b048084eec7900d091/snapshot.yaml
 
 packages:
   - .
@@ -6,7 +6,7 @@ packages:
 extra-deps:
 
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: 4ad81798402ce05655b37b31b0b67f444a2f0b91
+    commit: c85d57a95d919336afea7e0eff00e834bd6b4b58
     subdirs:
       - iohk-monitoring
       - contra-tracer
@@ -19,7 +19,7 @@ extra-deps:
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 70515f1aefdbd60d11061b4b370aa5e54a487e56
+    commit: 677b9377d4dc541eb3d7ffac079bdab7d489df1f
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -27,19 +27,19 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: 4c48d34fd60991bb1b9168d293cfe31a975d858e
+    commit: b83730dccab14111d62144b048084eec7900d091
     subdirs:
       - .
       - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: 81c72dab5ef6974226b5158c474cf7b3caebaea2
+    commit: 50ae62998da59d45ed8de418500e91cfc5075a83
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: ec96c64c665b741c17b4e38f611315bae9b0b054
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: bd7c60ad6470925aafbacc373081f6e3ae75d3de
+    commit: fe93af9e1a76ede191c98e458aaec83290607357
     subdirs:
       - ouroboros-consensus
       - ouroboros-network
