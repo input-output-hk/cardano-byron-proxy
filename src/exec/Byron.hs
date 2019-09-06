@@ -12,7 +12,7 @@ module Byron
   ) where
 
 import Control.Concurrent.STM (STM, atomically, check, readTVar, registerDelay, retry)
-import Control.Exception (IOException, catch, throwIO)
+import Control.Exception (SomeException, SomeAsyncException, catch, fromException, throwIO)
 import Control.Monad (when)
 import Control.Tracer (Tracer, traceWith)
 import qualified Data.ByteString.Lazy as Lazy (fromStrict)
@@ -172,9 +172,14 @@ download tracer genesisBlock epochSlots securityParam db bp = do
     ChainDB.addBlock db blk'
     pure $ CSL.headerHash blk
 
-  -- No need to trace it; cardano-sl libraries will do that.
-  exceptionHandler :: CSL.HeaderHash -> IOException -> IO CSL.HeaderHash
-  exceptionHandler h _ = pure h
+  -- Catch all sync exceptions from the downloadChain call that uses the
+  -- cardano-sl library, so that a failure to download will not kill the
+  -- program.
+  -- No need to trace it; cardano-sl will do that.
+  exceptionHandler :: CSL.HeaderHash -> SomeException -> IO CSL.HeaderHash
+  exceptionHandler h ex = case fromException ex :: Maybe SomeAsyncException of
+    Nothing -> pure h
+    Just _  -> throwIO ex
 
   pickRandom :: StdGen -> NonEmpty t -> (t, StdGen)
   pickRandom rndGen ne =
