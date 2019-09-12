@@ -40,7 +40,7 @@ import           Ouroboros.Storage.FS.API.Types            (MountPoint (..))
 import           Ouroboros.Storage.FS.IO                   (ioHasFS)
 import           Ouroboros.Storage.ImmutableDB.Types       (ValidationPolicy (..))
 import           Ouroboros.Storage.LedgerDB.DiskPolicy     (DiskPolicy (..))
-import           Ouroboros.Storage.LedgerDB.MemPolicy      (defaultMemPolicy)
+import           Ouroboros.Storage.LedgerDB.InMemory       (ledgerDbDefaultParams)
 import qualified Ouroboros.Storage.Util.ErrorHandling      as EH
 
 data DBConfig = DBConfig
@@ -115,7 +115,7 @@ withDB dbOptions dbTracer indexTracer rr nodeConfig extLedgerState k = do
 
         , cdbValidation = ValidateMostRecentEpoch
         , cdbBlocksPerFile = 21600 -- ?
-        , cdbMemPolicy = defaultMemPolicy (protocolSecurityParam nodeConfig)
+        , cdbParamsLgrDB = ledgerDbDefaultParams (protocolSecurityParam nodeConfig)
         , cdbDiskPolicy = ledgerDiskPolicy
 
         , cdbNodeConfig = nodeConfig
