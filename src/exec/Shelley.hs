@@ -45,7 +45,7 @@ mkPeer a b = Peer (a, b)
 
 type InitiatorVersions = Versions NodeToNodeVersion DictVersion (OuroborosApplication 'InitiatorApp Peer NodeToNodeProtocols IO Lazy.ByteString () Void)
 
-type ResponderVersions = Versions NodeToNodeVersion DictVersion (AnyResponderApp Peer NodeToNodeProtocols IO Lazy.ByteString)
+type ResponderVersions = Versions NodeToNodeVersion DictVersion (OuroborosApplication 'ResponderApp Peer NodeToNodeProtocols IO Lazy.ByteString Void ())
 
 -- Must have `ByronGiven` because of the constraints on `nodeKernel`
 withShelley
