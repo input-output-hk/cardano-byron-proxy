@@ -322,6 +322,7 @@ runShelleyServer
 runShelleyServer addr _ ctable rversions = do
   addrInfo <- resolveAddress addr
   withServer
+    nullTracer
     ctable
     addrInfo
     Shelley.mkPeer
