@@ -11,6 +11,7 @@ constraints:
   , primitive < 0.7
 
   -- Needed for cardano-sl
+  , safecopy < 0.10.0
   , servant == 0.15
   , servant-swagger == 1.1.7.1
   , servant-swagger-ui == 0.3.4.3.22.2
