@@ -32,13 +32,15 @@ import Ouroboros.Network.Block (SlotNo (..))
 import Ouroboros.Network.Point (WithOrigin (..), blockPointHash, blockPointSlot)
 import qualified Ouroboros.Network.Point as Point (Block (..))
 
+import Ouroboros.Consensus.Ledger.Byron (ByronHash(..))
+
 import Ouroboros.Byron.Proxy.Block (Block, Header, headerHash, unByronHeaderOrEBB)
 import Ouroboros.Byron.Proxy.Index.Types (Index (..))
 import qualified Ouroboros.Byron.Proxy.Index.Types as Index
 
 data TraceEvent where
-  Rollback    :: WithOrigin (Point.Block SlotNo HeaderHash) -> TraceEvent
-  Rollforward :: Point.Block SlotNo HeaderHash              -> TraceEvent
+  Rollback    :: WithOrigin (Point.Block SlotNo ByronHash) -> TraceEvent
+  Rollforward :: Point.Block SlotNo ByronHash              -> TraceEvent
   deriving (Show)
 
 -- | Make an index from an SQLite connection (sqlite-simple).
@@ -151,7 +153,7 @@ sql_get_tip =
   "SELECT header_hash, epoch, slot FROM block_index\
   \ ORDER BY epoch DESC, slot DESC LIMIT 1;"
 
-sqliteTip :: EpochSlots -> Sql.Connection -> IO (WithOrigin (Point.Block SlotNo HeaderHash))
+sqliteTip :: EpochSlots -> Sql.Connection -> IO (WithOrigin (Point.Block SlotNo ByronHash))
 sqliteTip epochSlots conn = do
    rows :: [(ByteString, Word64, Int)] <- Sql.query_ conn sql_get_tip
    case rows of
@@ -167,7 +169,7 @@ sqliteTip epochSlots conn = do
          then pure $ fromIntegral slotInt
          else throwIO $ InvalidRelativeSlot hh slotInt
        let slotNo = SlotNo $ unEpochSlots epochSlots * epoch + offsetInEpoch
-       pure $ At $ Point.Block slotNo hh
+       pure $ At $ Point.Block slotNo (ByronHash hh)
 
 sql_get_hash :: Query
 sql_get_hash =
@@ -175,8 +177,8 @@ sql_get_hash =
   \ WHERE header_hash = ?;"
 
 -- | Get epoch and slot by hash.
-sqliteLookup :: EpochSlots -> Sql.Connection -> HeaderHash -> IO (Maybe SlotNo)
-sqliteLookup epochSlots conn hh@(AbstractHash digest) = do
+sqliteLookup :: EpochSlots -> Sql.Connection -> ByronHash -> IO (Maybe SlotNo)
+sqliteLookup epochSlots conn (ByronHash hh@(AbstractHash digest)) = do
   rows :: [(Word64, Int)]
     <- Sql.query conn sql_get_hash (Sql.Only (convert digest :: ByteString))
   case rows of
@@ -208,7 +210,7 @@ sqliteRollforward epochSlots tracer conn hdr = do
 
   where
 
-  point = Point.Block slotNo hh
+  point = Point.Block slotNo (ByronHash hh)
 
   hh@(AbstractHash digest) = headerHash hdr
 
@@ -245,7 +247,7 @@ sqliteRollbackward
   :: EpochSlots
   -> Tracer IO TraceEvent
   -> Sql.Connection
-  -> WithOrigin (Point.Block SlotNo HeaderHash)
+  -> WithOrigin (Point.Block SlotNo ByronHash)
   -> IO ()
 sqliteRollbackward epochSlots tracer conn point = do
   traceWith tracer (Rollback point)
@@ -256,7 +258,7 @@ sqliteRollbackward epochSlots tracer conn point = do
     -- relative slot to decide what to delete. This ensures that when rolling
     -- back to a relative slot 0 block, we don't mistakenly delete the EBB.
     At bpoint -> Sql.withTransaction conn $ do
-      let hh@(AbstractHash digest) = blockPointHash bpoint
+      let ByronHash hh@(AbstractHash digest) = blockPointHash bpoint
           expectedEpoch, expectedSlot :: Int
           (expectedEpoch, expectedSlot) =
             fromIntegral (unSlotNo (blockPointSlot bpoint))
