@@ -109,10 +109,11 @@ download tracer genesisBlock epochSlots securityParam db bp = do
     -- Pick a peer from the list of announcers at random and download
     -- the chain.
     let (peer, rndGen') = pickRandom rndGen (btPeers bt)
+        targetHash = CSL.headerHash (btTip bt)
     chain <- atomically $ ChainDB.getCurrentChain db
     traceWith tracer $ mconcat
       [ "Attempting to download chain with hash "
-      , Text.fromString (show tipHash)
+      , Text.fromString (show targetHash)
       , " from "
       , Text.fromString (show peer)
       ]
@@ -124,8 +125,8 @@ download tracer genesisBlock epochSlots securityParam db bp = do
     tipHash' <- downloadChain
         bp
         peer
-        (CSL.headerHash (btTip bt))
-        (checkpoints chain)
+        targetHash
+        (reverse (checkpoints chain))
         (streamer tipHash)
       `catch`
         exceptionHandler tipHash
