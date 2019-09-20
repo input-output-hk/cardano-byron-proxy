@@ -32,7 +32,7 @@ import qualified Cardano.Chain.Block as Cardano
 import Cardano.Crypto.Hashing (AbstractHash (..))
 
 import qualified Ouroboros.Consensus.Block as Consensus (GetHeader (..))
-import Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB (..),
+import Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB (..), ByronHash(..),
          pattern ByronHeaderOrEBB, encodeByronBlock, unByronHeaderOrEBB)
 
 -- For type instance HeaderHash (Header blk) = HeaderHash blk
@@ -55,8 +55,8 @@ coerceHashToLegacy (AbstractHash digest) = Legacy.AbstractHash digest
 
 -- | Convert from a legacy header hash to a new header hash. They are
 -- structurally the same, nominally different.
-coerceHashFromLegacy :: CSL.HeaderHash -> Cardano.HeaderHash
-coerceHashFromLegacy (Legacy.AbstractHash digest) = AbstractHash digest
+coerceHashFromLegacy :: CSL.HeaderHash -> ByronHash
+coerceHashFromLegacy (Legacy.AbstractHash digest) = ByronHash $ AbstractHash digest
 
 -- | Same a `blockHash` but doesn't need `ByronGiven`.
 headerHash :: Consensus.Header (Block cfg) -> Cardano.HeaderHash
@@ -66,7 +66,7 @@ headerHash hdr = case unByronHeaderOrEBB hdr of
 
 -- | Gives `Just` with the block's header's hash, whenever it's an epoch
 -- boundary block.
-isEBB :: Block cfg -> Maybe Cardano.HeaderHash
+isEBB :: Block cfg -> Maybe ByronHash
 isEBB blk = case unByronBlockOrEBB blk of
   Cardano.ABOBBlock    _ -> Nothing
-  Cardano.ABOBBoundary _ -> Just $ headerHash (Consensus.getHeader blk)
+  Cardano.ABOBBoundary _ -> Just $ ByronHash $ headerHash (Consensus.getHeader blk)

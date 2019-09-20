@@ -38,7 +38,7 @@ import Ouroboros.Byron.Proxy.Block (Block, ByronBlockOrEBB (..),
          coerceHashToLegacy, unByronHeaderOrEBB, headerHash)
 import Ouroboros.Byron.Proxy.Main
 import Ouroboros.Consensus.Block (Header)
-import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
+import Ouroboros.Consensus.Ledger.Byron (ByronGiven, ByronHash(..))
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (maxRollbacks))
 import Ouroboros.Network.Block (ChainHash (..), Point, pointHash)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -138,8 +138,8 @@ download tracer genesisBlock epochSlots securityParam db bp = do
 
   pointToHash :: Point (Header (Block cfg)) -> Maybe CSL.HeaderHash
   pointToHash pnt = case pointHash pnt of
-    GenesisHash    -> Nothing
-    BlockHash hash -> Just $ coerceHashToLegacy hash
+    GenesisHash                -> Nothing
+    BlockHash (ByronHash hash) -> Just $ coerceHashToLegacy hash
 
   -- Offsets for selectPoints. Defined in the same way as for the Shelley
   -- chain sync client: fibonacci numbers including 0 and k.
