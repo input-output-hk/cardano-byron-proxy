@@ -4,6 +4,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Ouroboros.Byron.Proxy.Index.Sqlite
   ( withIndex
@@ -34,7 +35,8 @@ import qualified Ouroboros.Network.Point as Point (Block (..))
 
 import Ouroboros.Consensus.Ledger.Byron (ByronHash(..))
 
-import Ouroboros.Byron.Proxy.Block (Block, Header, headerHash, unByronHeaderOrEBB)
+import Ouroboros.Byron.Proxy.Block (Block, Header, pattern ByronHeaderRegular,
+         pattern ByronHeaderBoundary, headerHash)
 import Ouroboros.Byron.Proxy.Index.Types (Index (..))
 import qualified Ouroboros.Byron.Proxy.Index.Types as Index
 
@@ -218,14 +220,14 @@ sqliteRollforward epochSlots tracer conn hdr = do
   hashBytes = convert digest
 
   slotNo :: SlotNo
-  slotNo = case unByronHeaderOrEBB hdr of
-    Left  bvd  -> SlotNo $ Cardano.boundaryEpoch bvd * unEpochSlots epochSlots
-    Right hdr' -> SlotNo $ unSlotNumber (Binary.unAnnotated (Cardano.aHeaderSlot hdr'))
+  slotNo = case hdr of
+    ByronHeaderBoundary bvd  _ -> SlotNo $ Cardano.boundaryEpoch bvd * unEpochSlots epochSlots
+    ByronHeaderRegular  hdr' _ -> SlotNo $ unSlotNumber (Binary.unAnnotated (Cardano.aHeaderSlot hdr'))
 
   epoch, slot :: Int
-  (epoch, slot) = case unByronHeaderOrEBB hdr of
-    Left  bvd  -> (fromIntegral (Cardano.boundaryEpoch bvd), -1)
-    Right hdr' ->
+  (epoch, slot) = case hdr of
+    ByronHeaderBoundary bvd  _ -> (fromIntegral (Cardano.boundaryEpoch bvd), -1)
+    ByronHeaderRegular  hdr' _ ->
       fromIntegral (unSlotNumber (Binary.unAnnotated (Cardano.aHeaderSlot hdr')))
       `quotRem`
       fromIntegral (unEpochSlots epochSlots)
