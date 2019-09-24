@@ -12,7 +12,7 @@ module Byron
   , recodeBlockOrFail
   ) where
 
-import Control.Concurrent.STM (STM, atomically, check, readTVar, registerDelay, retry)
+import Control.Concurrent.STM (STM, atomically, check, modifyTVar', readTVar, registerDelay, retry)
 import Control.Exception (SomeException, SomeAsyncException, catch, fromException, throwIO)
 import Control.Monad (when)
 import Control.Tracer (Tracer, traceWith)
@@ -33,6 +33,7 @@ import qualified Cardano.Chain.Slotting as Cardano
 import qualified Pos.Binary.Class as CSL (decodeFull, serialize)
 import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), GenesisBlock,
                                          MainBlockHeader, HeaderHash, headerHash)
+import           Pos.Communication (NodeId)
 import qualified Pos.Infra.Diffusion.Types as CSL
 
 import Ouroboros.Byron.Proxy.Block (Block, ByronBlockOrEBB (..),
@@ -91,7 +92,7 @@ download tracer genesisBlock epochSlots securityParam db bp = do
     :: CSL.HeaderHash
     -> STM (BestTip CSL.BlockHeader)
   waitForNext lastDownloadedHash = do
-    mBt <- bestTip bp
+    mBt <- readTVar (bestTip bp)
     case mBt of
       -- Haven't seen any tips from Byron peers.
       Nothing -> retry
@@ -130,7 +131,7 @@ download tracer genesisBlock epochSlots securityParam db bp = do
         (checkpoints chain)
         (streamer tipHash)
       `catch`
-        exceptionHandler tipHash
+        exceptionHandler peer tipHash
     mainLoop rndGen' tipHash'
 
   checkpoints
@@ -177,10 +178,17 @@ download tracer genesisBlock epochSlots securityParam db bp = do
   -- Catch all sync exceptions from the downloadChain call that uses the
   -- cardano-sl library, so that a failure to download will not kill the
   -- program.
+  -- The peer (NodeId) from which we were downloading when the exception
+  -- happened is used so that entry in the best tip TVar can be removed,
+  -- ensuring we don't try to download from them again (until they announce
+  -- a new header).
   -- No need to trace it; cardano-sl will do that.
-  exceptionHandler :: CSL.HeaderHash -> SomeException -> IO CSL.HeaderHash
-  exceptionHandler h ex = case fromException ex :: Maybe SomeAsyncException of
-    Nothing -> pure h
+  exceptionHandler :: NodeId -> CSL.HeaderHash -> SomeException -> IO CSL.HeaderHash
+  exceptionHandler peer h ex = case fromException ex :: Maybe SomeAsyncException of
+    Nothing -> do
+      atomically $ modifyTVar' (bestTip bp) $ \mBt ->
+        mBt >>= removePeerFromBestTip peer
+      pure h
     Just _  -> throwIO ex
 
   pickRandom :: StdGen -> NonEmpty t -> (t, StdGen)

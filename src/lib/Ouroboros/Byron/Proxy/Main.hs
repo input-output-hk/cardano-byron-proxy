@@ -25,14 +25,15 @@ module Ouroboros.Byron.Proxy.Main
   , ByronProxy (..)
   , withByronProxy
   , BestTip (..)
+  , updateBestTip
+  , removePeerFromBestTip
   ) where
 
 import           Codec.CBOR.Decoding                       (Decoder)
 import qualified Codec.CBOR.Write                          as CBOR (toLazyByteString)
 import           Control.Arrow                             (first)
 import           Control.Concurrent.Async                  (concurrently, race)
-import           Control.Concurrent.STM                    (STM, atomically,
-                                                            check)
+import           Control.Concurrent.STM                    (atomically, check)
 import           Control.Concurrent.STM.TVar               (TVar, modifyTVar',
                                                             newTVarIO, readTVar)
 import           Control.Exception                         (Exception, bracket,
@@ -45,7 +46,7 @@ import           Data.Conduit                              (ConduitT, await,
                                                             runConduit, yield,
                                                             (.|))
 import           Data.Foldable                             (foldlM)
-import           Data.List                                 (maximumBy)
+import           Data.List                                 (delete, maximumBy)
 import           Data.List.NonEmpty                        (NonEmpty)
 import qualified Data.List.NonEmpty                        as NE
 import           Data.Map.Strict                           (Map)
@@ -199,16 +200,22 @@ configFromCSLConfigs genesisConfig blockConfig updateConfig nodeConfig networkCo
 
 -- | Interface presented by the Byron proxy.
 data ByronProxy = ByronProxy
-  { -- | A transaction which gives the current 'BestTip'.
+  { -- | A TVar which gives the current 'BestTip'.
     -- These are header announcements from the Byron cluster. They don't
     -- come in through a queue because there's no point in dealing with an
     -- earlier announcement when a later one is available.
+    --
+    -- The TVar itself is exposed, rather than a reading transaction, because
+    -- users of ByronProxy may wish to update it, for example to remove a
+    -- peer. The proxy implementation in this module will take care of adding
+    -- new peers according to header announcements sourced from the cardano-sl
+    -- diffusion layer.
     --
     -- FIXME should not use the legacy byron block header here.
     -- Logic.postBlockHeader sources this, but it gives legacy BlockHeaders.
     -- We'd need to be able to get a non-legacy header from it.
     -- Could re-code it...
-    bestTip       :: STM (Maybe (BestTip Byron.Legacy.BlockHeader))
+    bestTip       :: TVar (Maybe (BestTip Byron.Legacy.BlockHeader))
     -- | Attempt to download the chain at a given header from a given peer.
     -- Those data can be taken from 'bestTip', but of course may no longer be
     -- correct at the time of the call.
@@ -433,16 +440,34 @@ compareHeaders bhl bhr = case Byron.Legacy.headerHash bhl == Byron.Legacy.header
 -- it's used: we expect a better header to come in later and throw away the
 -- previous list. Also we don't expect a peer to announce the same header
 -- twice.
-updateBestTip :: NodeId -> Byron.Legacy.BlockHeader -> BestTip Byron.Legacy.BlockHeader -> BestTip Byron.Legacy.BlockHeader
+updateBestTip
+  :: NodeId
+  -> Byron.Legacy.BlockHeader
+  -> BestTip Byron.Legacy.BlockHeader
+  -> BestTip Byron.Legacy.BlockHeader
 updateBestTip peer header bt = case compareHeaders header (btTip bt) of
   NotBetter -> bt
   Same      -> bt { btPeers = NE.cons peer (btPeers bt) }
   Better    -> BestTip { btTip = header, btPeers = peer NE.:| [] }
 
-updateBestTipMaybe :: NodeId -> Byron.Legacy.BlockHeader -> Maybe (BestTip Byron.Legacy.BlockHeader) -> BestTip Byron.Legacy.BlockHeader
+updateBestTipMaybe
+  :: NodeId
+  -> Byron.Legacy.BlockHeader
+  -> Maybe (BestTip Byron.Legacy.BlockHeader)
+  -> BestTip Byron.Legacy.BlockHeader
 updateBestTipMaybe peer header = maybe bt (updateBestTip peer header)
   where
   bt = BestTip { btTip = header, btPeers = peer NE.:| [] }
+
+-- | Remove a peer from the list of announcers for that best tip. If it's the
+-- only one, Nothing is given.
+removePeerFromBestTip :: NodeId -> BestTip a -> Maybe (BestTip a)
+removePeerFromBestTip peer bt = fmap (reconstruct bt) (dropPeer (NE.toList (btPeers bt)))
+  where
+  dropPeer :: [NodeId] -> Maybe (NonEmpty NodeId)
+  dropPeer = NE.nonEmpty . delete peer
+  reconstruct :: BestTip a -> NonEmpty NodeId -> BestTip a
+  reconstruct bt ne = let !bt' = bt { btPeers = ne } in bt'
 
 -- | Stream blocks from a given hash. The starting point in the ChainDB is
 -- determined by the Index, which is assumed to follow that ChainDB.
@@ -732,7 +757,7 @@ withByronProxy trace bpc idx db mempool k = do
 
     let byronProxy :: Diffusion IO -> ByronProxy
         byronProxy diff = ByronProxy
-          { bestTip = takeBestTip
+          { bestTip = tipsTVar
           , downloadChain = \peer tipHash checkpointHashes sbK -> do
               streamResult <- streamBlocks diff peer tipHash checkpointHashes sbK
               case streamResult of
@@ -751,9 +776,6 @@ withByronProxy trace bpc idx db mempool k = do
 
         epochSlots :: EpochSlots
         epochSlots = bpcEpochSlots bpc
-
-        takeBestTip :: STM (Maybe (BestTip Byron.Legacy.BlockHeader))
-        takeBestTip = readTVar tipsTVar
 
         background :: forall x . Diffusion IO -> IO x
         background diff = fmap (\(x, _) -> x) $
@@ -775,7 +797,9 @@ withByronProxy trace bpc idx db mempool k = do
             -- When a new block header announcement comes in, we update the best
             -- Byron tip `TVar`.
           , postBlockHeader    = \header peer -> atomically $
-              modifyTVar' tipsTVar $ Just . updateBestTipMaybe peer header
+              modifyTVar' tipsTVar $ \bt ->
+                let !bt' = updateBestTipMaybe peer header bt
+                in  Just bt'
 
           , postTx            = txKeyValFromMempool mempool txTicketMapVar
 

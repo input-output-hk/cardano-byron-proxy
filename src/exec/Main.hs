@@ -38,6 +38,8 @@ import qualified Cardano.Chain.Slotting as Cardano
 import qualified Cardano.Chain.Update as Cardano
 import qualified Cardano.Crypto as Cardano
 
+import           Network.Broadcast.OutboundQueue (ReconsiderAfter (..))
+
 import qualified Pos.Chain.Block as CSL (genesisBlock0)
 import qualified Pos.Chain.Block as CSL (BlockConfiguration, withBlockConfiguration)
 import qualified Pos.Chain.Delegation as CSL
@@ -49,6 +51,7 @@ import qualified Pos.Chain.Ssc as CSL (withSscConfiguration)
 import qualified Pos.Configuration as CSL (NodeConfiguration, withNodeConfiguration)
 import qualified Pos.Crypto as CSL
 
+import qualified Pos.Client.CLI.Options as CSL (configurationOptionsParser)
 import qualified Pos.Infra.Network.CLI as CSL (NetworkConfigOpts (..),
                                                externalNetworkAddressOption,
                                                intNetworkConfigOpts,
@@ -58,7 +61,6 @@ import Pos.Infra.Network.Types (NetworkConfig (..))
 import qualified Pos.Infra.Network.Policy as Policy
 import qualified Pos.Launcher.Configuration as CSL (Configuration (..),
                                                     ConfigurationOptions (..))
-import qualified Pos.Client.CLI.Options as CSL (configurationOptionsParser)
 import qualified Pos.Util.Config as CSL (parseYamlConfig)
 
 import Pos.Util.Trace (Trace)
@@ -385,6 +387,10 @@ runByron tracer byronOptions genesisConfig blockConfig updateConfig nodeConfig e
     let networkConfig' = networkConfig
           { ncEnqueuePolicy = Policy.defaultEnqueuePolicyRelay
           , ncDequeuePolicy = Policy.defaultDequeuePolicyRelay
+          -- In cardano-sl, the outbound queue's failure policy controls
+          -- whether a message is enqueued to a peer. It's set explicitly here
+          -- for clarity, but it's the same as the default.
+          , ncFailurePolicy = \_ _ _ -> ReconsiderAfter 200
           }
         bpc :: ByronProxyConfig
         bpc = configFromCSLConfigs

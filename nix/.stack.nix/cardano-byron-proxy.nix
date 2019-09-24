@@ -75,6 +75,7 @@
             (hsPkgs.cardano-sl-core)
             (hsPkgs.cardano-sl-crypto)
             (hsPkgs.cardano-sl-infra)
+            (hsPkgs.cardano-sl-networking)
             (hsPkgs.cardano-sl-util)
             (hsPkgs.cborg)
             (hsPkgs.containers)
