@@ -14,7 +14,9 @@ Description : Some block-related definitions.
 module Ouroboros.Byron.Proxy.Block
   ( Block
   , ByronBlockOrEBB (..)
-  , Consensus.Header (ByronHeaderOrEBB, unByronHeaderOrEBB)
+  , Consensus.Header
+  , pattern ByronHeaderRegular
+  , pattern ByronHeaderBoundary
   , toSerializedBlock
   , coerceHashFromLegacy
   , coerceHashToLegacy
@@ -33,7 +35,8 @@ import Cardano.Crypto.Hashing (AbstractHash (..))
 
 import qualified Ouroboros.Consensus.Block as Consensus (GetHeader (..))
 import Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB (..), ByronHash(..),
-         pattern ByronHeaderOrEBB, encodeByronBlock, unByronHeaderOrEBB)
+         pattern ByronHeaderRegular, pattern ByronHeaderBoundary,
+         encodeByronBlock)
 
 -- For type instance HeaderHash (Header blk) = HeaderHash blk
 -- Anyone who imports this module will almost certainly want that instance.
@@ -60,9 +63,9 @@ coerceHashFromLegacy (Legacy.AbstractHash digest) = ByronHash $ AbstractHash dig
 
 -- | Same a `blockHash` but doesn't need `ByronGiven`.
 headerHash :: Consensus.Header (Block cfg) -> Cardano.HeaderHash
-headerHash hdr = case unByronHeaderOrEBB hdr of
-  Left ebb -> Cardano.boundaryHeaderHashAnnotated ebb
-  Right mh -> Cardano.headerHashAnnotated mh
+headerHash hdr = case hdr of
+  ByronHeaderRegular  _ byronHash -> unByronHash byronHash
+  ByronHeaderBoundary _ byronHash -> unByronHash byronHash
 
 -- | Gives `Just` with the block's header's hash, whenever it's an epoch
 -- boundary block.

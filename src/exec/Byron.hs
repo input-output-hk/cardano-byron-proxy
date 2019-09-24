@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Byron
   ( download
@@ -35,7 +36,8 @@ import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), GenesisBlock,
 import qualified Pos.Infra.Diffusion.Types as CSL
 
 import Ouroboros.Byron.Proxy.Block (Block, ByronBlockOrEBB (..),
-         coerceHashToLegacy, unByronHeaderOrEBB, headerHash)
+         pattern ByronHeaderRegular, pattern ByronHeaderBoundary,
+         coerceHashToLegacy, headerHash)
 import Ouroboros.Byron.Proxy.Main
 import Ouroboros.Consensus.Block (Header)
 import Ouroboros.Consensus.Ledger.Byron (ByronGiven, ByronHash(..))
@@ -243,14 +245,14 @@ announce mHashOfLast db bp = do
     case CF.head fragment of
       Nothing      -> pure False
       Just header' -> pure (headerHash header' == hash)
-  when shouldAnnounce $ case unByronHeaderOrEBB tipHeader of
+  when shouldAnnounce $ case tipHeader of
     -- Must decode the legacy header from the cardano-ledger header.
     -- TODO alternatively, the type of `ByronProxy.announceChain` could change
     -- to accept a `Header Block`, and it could deal with the recoding. Probably
     -- better that way
-    Right hdr -> case CSL.decodeFull (Lazy.fromStrict (Cardano.headerAnnotation hdr)) of
+    ByronHeaderRegular  hdr _ -> case CSL.decodeFull (Lazy.fromStrict (Cardano.headerAnnotation hdr)) of
       Left  _ -> error "announce: could not decode main header"
       Right (hdr' :: CSL.MainBlockHeader) -> announceChain bp hdr'
     -- We do not announce EBBs.
-    Left  _   -> pure ()
+    ByronHeaderBoundary  _  _ -> pure ()
   announce (Just hash) db bp
