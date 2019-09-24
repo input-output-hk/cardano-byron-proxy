@@ -467,7 +467,7 @@ removePeerFromBestTip peer bt = fmap (reconstruct bt) (dropPeer (NE.toList (btPe
   dropPeer :: [NodeId] -> Maybe (NonEmpty NodeId)
   dropPeer = NE.nonEmpty . delete peer
   reconstruct :: BestTip a -> NonEmpty NodeId -> BestTip a
-  reconstruct bt ne = let !bt' = bt { btPeers = ne } in bt'
+  reconstruct bt' ne = let !bt'' = bt' { btPeers = ne } in bt''
 
 -- | Stream blocks from a given hash. The starting point in the ChainDB is
 -- determined by the Index, which is assumed to follow that ChainDB.
