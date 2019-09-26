@@ -10,11 +10,9 @@
 
 {-# LANGUAGE TypeFamilies #-}
 
-import Codec.SerialiseTerm (decodeTerm, encodeTerm)
 import Control.Concurrent.Async (concurrently, link, wait, withAsync)
 import Control.Exception (throwIO)
 import Control.Monad (mapM, void)
-import Control.Monad.STM (retry)
 import Control.Monad.Trans.Except (runExceptT)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import Data.Functor.Contravariant (Op (..))
@@ -82,7 +80,7 @@ import Ouroboros.Consensus.Node (getMempool)
 import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..))
 import Ouroboros.Consensus.Node.ProtocolInfo.Byron (PBftSignatureThreshold (..),
            protocolInfoByron)
-import Ouroboros.Network.NodeToNode (withServer)
+import Ouroboros.Network.NodeToNode (IPSubscriptionTarget (..), withServer, ipSubscriptionWorker)
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (withRegistry)
 import Ouroboros.Network.Block (SlotNo (..), Point (..))
@@ -91,8 +89,6 @@ import qualified Ouroboros.Network.Point as Point (Block (..))
 import Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
 import Ouroboros.Network.Protocol.Handshake.Version (DictVersion (..))
 import Ouroboros.Network.Server.ConnectionTable (ConnectionTable)
-import Ouroboros.Network.Socket (connectToNode')
-import Ouroboros.Network.Subscription (IPSubscriptionTarget (..), ipSubscriptionWorker)
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 import Ouroboros.Storage.ChainDB.Impl.Types (TraceEvent (..), TraceAddBlockEvent (..), TraceValidationEvent (..))
 
@@ -323,6 +319,7 @@ runShelleyServer addr _ ctable rversions = do
   addrInfo <- resolveAddress addr
   withServer
     nullTracer
+    nullTracer
     ctable
     addrInfo
     Shelley.mkPeer
@@ -342,6 +339,9 @@ runShelleyClient producerAddrs _ ctable iversions = do
   sockAddrs <- mapM resolveAddress producerAddrs
   ipSubscriptionWorker
     nullTracer
+    nullTracer
+    nullTracer
+    Shelley.mkPeer
     ctable
     (Just (Network.SockAddrInet 0 0))
     (Just (Network.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
@@ -350,16 +350,7 @@ runShelleyClient producerAddrs _ ctable iversions = do
          ispIps     = fmap Network.addrAddress sockAddrs
        , ispValency = length sockAddrs
        })
-    (const retry)
-    (\sock -> do
-        connectToNode'
-          (\(DictVersion codec) -> encodeTerm codec)
-          (\(DictVersion codec) -> decodeTerm codec)
-          nullTracer
-          Shelley.mkPeer
-          (iversions)
-          sock
-    )
+    iversions
 
 runByron
   :: ( ByronGiven )
