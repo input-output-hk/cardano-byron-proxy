@@ -24,6 +24,7 @@ import Ouroboros.Storage.ChainDB.API (ChainDB)
 
 import Ouroboros.Network.NodeToNode
 import Ouroboros.Network.Mux
+import Ouroboros.Network.Protocol.ChainSync.PipelineDecision (pipelineDecisionLowHighMark)
 import Ouroboros.Network.Protocol.Handshake.Version
 import Ouroboros.Network.Server.ConnectionTable (ConnectionTable, newConnectionTable)
 import Ouroboros.Consensus.BlockchainTime (BlockchainTime)
@@ -101,4 +102,5 @@ mkParams rr cdb nconf nstate blockchainTime = NodeArgs
   , blockFetchSize = nodeBlockFetchSize
   , blockMatchesHeader = nodeBlockMatchesHeader
   , maxUnackTxs = maxBound
+  , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO: make configurable!
   }
