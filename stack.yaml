@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/12ab51e27539c9cce042ded0c89efc0ccae6137a/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/96e8dcb29dc3c29eee99c0d020152fad6071af6d/snapshot.yaml
 
 packages:
   - .
@@ -33,13 +33,13 @@ extra-deps:
       - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: 812a36b8d6714cf76ca3576bdac903bedd88a72b
+    commit: 3801d53152eb4d1c8816225748f242c5dc670be8
 
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: e8dc8316b21cf6adff6a926e91caff22e208392c
+    commit: a492a9897e38db07aea440d79a63c6a5a3171906
     subdirs:
       - ouroboros-consensus
       - ouroboros-network
