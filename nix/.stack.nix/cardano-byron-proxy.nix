@@ -69,6 +69,7 @@
             (hsPkgs.cardano-binary)
             (hsPkgs.cardano-crypto-wrapper)
             (hsPkgs.cardano-ledger)
+            (hsPkgs.cardano-prelude)
             (hsPkgs.cardano-sl)
             (hsPkgs.cardano-sl-binary)
             (hsPkgs.cardano-sl-chain)

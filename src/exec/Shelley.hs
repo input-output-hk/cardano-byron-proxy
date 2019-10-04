@@ -1,5 +1,5 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 module Shelley where
@@ -12,6 +12,8 @@ import Network.Socket (SockAddr)
 import Cardano.Chain.UTxO.Validation ()
 import Crypto.Random (drgNew)
 import qualified Network.Socket as Socket
+
+import Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF(..))
 
 import Ouroboros.Byron.Proxy.Block (Block)
 import Ouroboros.Consensus.Block (BlockProtocol)
@@ -37,6 +39,7 @@ import Ouroboros.Consensus.NodeNetwork
 
 newtype Peer = Peer { getPeer :: (SockAddr, SockAddr) }
   deriving (Eq, Ord, Show)
+  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "Peer" Peer
 
 instance Condense Peer where
   condense = show
