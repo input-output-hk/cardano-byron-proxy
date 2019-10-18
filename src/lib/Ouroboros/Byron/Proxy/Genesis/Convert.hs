@@ -24,7 +24,7 @@ import Numeric.Natural (Natural)
 import qualified Cardano.Binary as Binary
 import qualified Cardano.Chain.Common as Cardano
 import qualified Cardano.Chain.Delegation as Cardano
-import qualified Cardano.Chain.Delegation (signature)
+import qualified Cardano.Chain.Delegation (annotation, signature)
 import qualified Cardano.Chain.Genesis as Cardano
 import qualified Cardano.Chain.Slotting as Cardano
 import qualified Cardano.Chain.Update as Cardano
@@ -87,6 +87,7 @@ convertProxySKHeavy psk = Cardano.UnsafeACertificate
   , Cardano.issuerVK = convertPublicKey (CSL.pskIssuerPk psk)
   , Cardano.delegateVK = convertPublicKey (CSL.pskDelegatePk psk)
   , Cardano.Chain.Delegation.signature = convertCert (CSL.pskCert psk)
+  , Cardano.Chain.Delegation.annotation = ()
   }
 
 convertHeavyDlgIndex :: CSL.HeavyDlgIndex -> Binary.Annotated Cardano.EpochNumber ()
