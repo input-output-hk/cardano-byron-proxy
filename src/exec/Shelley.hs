@@ -20,6 +20,7 @@ import Ouroboros.Consensus.Block (BlockProtocol)
 import Ouroboros.Consensus.Protocol (NodeConfig, NodeState)
 import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
+import Ouroboros.Consensus.Mempool.Impl (MempoolCapacity (..))
 import Ouroboros.Consensus.Util.Condense (Condense (..))
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import Ouroboros.Storage.ChainDB.API (ChainDB)
@@ -107,4 +108,5 @@ mkParams rr cdb nconf nstate blockchainTime = NodeArgs
   , blockMatchesHeader = nodeBlockMatchesHeader
   , maxUnackTxs = maxBound
   , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO: make configurable!
+  , mempoolCap = MempoolCapacity 2048 -- TODO: is this value ok?
   }
