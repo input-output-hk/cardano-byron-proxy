@@ -25,6 +25,7 @@ import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 
 import Ouroboros.Network.NodeToNode
+import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.Protocol.ChainSync.PipelineDecision (pipelineDecisionLowHighMark)
 import Ouroboros.Network.Protocol.Handshake.Version
@@ -75,7 +76,7 @@ withShelley rr cdb conf state blockchainTime k = do
 
 -- | Found in cardano-node that the network magic should be 0.
 vData :: NodeToNodeVersionData
-vData = NodeToNodeVersionData { networkMagic = 0 }
+vData = NodeToNodeVersionData { networkMagic = NetworkMagic 0 }
 
 versions
   :: NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
