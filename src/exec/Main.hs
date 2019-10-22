@@ -20,6 +20,7 @@ import Data.List (intercalate)
 import qualified Data.Reflection as Reflection (give, given)
 import Data.String (fromString)
 import Data.Text (Text)
+import Data.Word (Word64)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy.Builder as Text
 import qualified Network.Socket as Network
@@ -83,6 +84,7 @@ import Ouroboros.Consensus.Node.ProtocolInfo.Byron (PBftSignatureThreshold (..),
 import Ouroboros.Network.NodeToNode (IPSubscriptionTarget (..), withServer, ipSubscriptionWorker)
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (withRegistry)
+import Ouroboros.Consensus.Util.TraceSize (LedgerDbSize)
 import Ouroboros.Network.Block (BlockNo (..), Point (..))
 import Ouroboros.Network.Point (WithOrigin (..))
 import Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
@@ -107,6 +109,8 @@ data ByronProxyOptions = ByronProxyOptions
   , bpoPBftSignatureThreshold      :: !(Maybe PBftSignatureThreshold)
     -- ^ PBFT signature threshold parameter. It's not present in, and cannot
     -- be derived from, the cardano-sl configuration.
+  , bpoTraceLedgerEvery            :: !(Maybe Word64)
+    -- ^ Enable/disable tracing of the ledger DB (see 'traceLedgerEvery')
   }
 
 -- | Host and port on which to run the Shelley server.
@@ -193,6 +197,7 @@ cliParser = ByronProxyOptions
   <*> cliShelleyOptions
   <*> cliByronOptions
   <*> cliPBftSignatureThreshold
+  <*> cliTraceLedgerEvery
 
   where
 
@@ -293,6 +298,13 @@ cliParser = ByronProxyOptions
         , CSL.ncoExternalAddress = ncoExternalAddress
         , CSL.ncoBindAddress = ncoBindAddress
         }
+
+  cliTraceLedgerEvery :: Opt.Parser (Maybe Word64)
+  cliTraceLedgerEvery = Opt.optional $ Opt.option Opt.auto $ mconcat [
+        Opt.long "trace-ledger-every"
+      , Opt.metavar "SLOTS"
+      , Opt.help "Trace size of the ledger DB every SLOTS slots"
+      ]
 
   dashconcat :: [String] -> String
   dashconcat = intercalate "-"
@@ -457,13 +469,6 @@ main = do
           . CSL.getProtocolMagicId
           . CSL.configProtocolMagic
           $ oldGenesisConfig
-        -- Next, set up the database, taking care to seed with the genesis
-        -- block if it's empty.
-        dbc :: DBConfig
-        dbc = DBConfig
-          { dbFilePath    = bpoDatabasePath bpo
-          , indexFilePath = bpoIndexPath bpo
-          }
     -- Fulfill ByronGiven, and the necessary cardano-sl reflection configurations.
     CSL.withUpdateConfiguration (CSL.ccUpdate yamlConfig) $
       CSL.withSscConfiguration (CSL.ccSsc yamlConfig) $
@@ -501,6 +506,10 @@ main = do
             indexTracer = Tracer $ \trEvent ->
               let val = ("index", Monitoring.Info, Monitoring.LogMessage (fromString (show trEvent)))
               in  doConvertedTrace val
+            sizeTracer :: Tracer IO (LedgerDbSize (Block ByronConfig))
+            sizeTracer = Tracer $ \size ->
+              let val = ("ledgerDB", Monitoring.Info, Monitoring.LogMessage (fromString (show size)))
+              in doConvertedTrace val
         traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Opening database")
         -- Thread registry is needed by ChainDB and by the network protocols.
         -- I assume it's supposed to be shared?
@@ -523,7 +532,15 @@ main = do
               slotDuration = SlotLength (fromRational (toRational slotMs / 1000))
               systemStart = SystemStart (Cardano.gdStartTime (Cardano.configGenesisData newGenesisConfig))
           btime <- realBlockchainTime rr slotDuration systemStart
-          withDB dbc dbTracer indexTracer rr nodeConfig extLedgerState $ \idx cdb -> do
+          -- Next, set up the database, taking care to seed with the genesis
+          -- block if it's empty.
+          let dbc :: DBConfig
+              dbc = DBConfig
+                { dbFilePath       = bpoDatabasePath bpo
+                , indexFilePath    = bpoIndexPath bpo
+                , traceLedgerEvery = bpoTraceLedgerEvery bpo
+                }
+          withDB dbc dbTracer indexTracer sizeTracer rr nodeConfig extLedgerState $ \idx cdb -> do
             traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
             Shelley.withShelley rr cdb nodeConfig nodeState btime $ \kernel ctable iversions rversions -> do
               let server = runShelleyServer (soLocalAddress      (bpoShelleyOptions bpo)) rr ctable rversions

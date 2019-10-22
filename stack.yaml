@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/96e8dcb29dc3c29eee99c0d020152fad6071af6d/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/ad19158c7599bc5d50fe7cb0111a1488a139a381/snapshot.yaml
 
 packages:
   - .
@@ -27,7 +27,7 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: b9bf62f2bab90539809bee13620fe7d29b35928d
+    commit: ad19158c7599bc5d50fe7cb0111a1488a139a381
     subdirs:
       - .
       - test
@@ -41,7 +41,7 @@ extra-deps:
     commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: d3e71facd53da4a2c72e4947f551ddeac45fba41
+    commit: 4d83bbcf70cffe69f312b54201ee9d0038e87355
     subdirs:
       - ouroboros-consensus
       - ouroboros-network

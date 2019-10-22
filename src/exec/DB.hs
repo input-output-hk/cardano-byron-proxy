@@ -9,8 +9,10 @@ module DB
 
 import           Control.Exception                         (bracket)
 import           Control.Tracer                            (Tracer)
+import qualified Control.Tracer                            as Tracer
 import qualified Data.Reflection                           as Reflection (given)
 import           Data.Time.Clock                           (secondsToDiffTime)
+import           Data.Word                                 (Word64)
 import qualified System.Directory                          (createDirectoryIfMissing)
 import           System.FilePath                           ((</>))
 
@@ -30,6 +32,7 @@ import           Ouroboros.Consensus.Protocol              (NodeConfig)
 import           Ouroboros.Consensus.Protocol.Abstract     (protocolSecurityParam)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
+import           Ouroboros.Consensus.Util.TraceSize        (LedgerDbSize, traceLedgerDbSize)
 import           Ouroboros.Storage.ChainDB.API             (ChainDB)
 import qualified Ouroboros.Storage.ChainDB.API             as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Impl            as ChainDB
@@ -44,10 +47,13 @@ import           Ouroboros.Storage.LedgerDB.InMemory       (ledgerDbDefaultParam
 import qualified Ouroboros.Storage.Util.ErrorHandling      as EH
 
 data DBConfig = DBConfig
-  { dbFilePath    :: !FilePath
+  { dbFilePath       :: !FilePath
     -- ^ Directory to house the `ImmutableDB`.
-  , indexFilePath :: !FilePath
+  , indexFilePath    :: !FilePath
     -- ^ Path to the SQLite index.
+  , traceLedgerEvery :: !(Maybe Word64)
+    -- ^ Trace the size of the ledger DB every @n@ slots
+    -- Use @Nothing@ to disable ledger DB size tracing.
   }
 
 -- | Set up and use a DB.
@@ -59,12 +65,13 @@ withDB
   => DBConfig
   -> Tracer IO (ChainDB.TraceEvent (Block ByronConfig))
   -> Tracer IO Sqlite.TraceEvent
+  -> Tracer IO (LedgerDbSize (Block ByronConfig))
   -> ResourceRegistry IO
   -> NodeConfig (BlockProtocol (Block ByronConfig))
   -> ExtLedgerState (Block ByronConfig)
   -> (Index IO (Header (Block ByronConfig)) -> ChainDB IO (Block ByronConfig) -> IO t)
   -> IO t
-withDB dbOptions dbTracer indexTracer rr nodeConfig extLedgerState k = do
+withDB dbOptions dbTracer indexTracer traceDbSize rr nodeConfig extLedgerState k = do
   -- The ChainDB/Storage layer will not create a directory for us, we have
   -- to ensure it exists.
   System.Directory.createDirectoryIfMissing True (dbFilePath dbOptions)
@@ -124,6 +131,9 @@ withDB dbOptions dbTracer indexTracer rr nodeConfig extLedgerState k = do
         , cdbGenesis = pure extLedgerState
 
         , cdbTracer = dbTracer
+        , cdbTraceLedger = case traceLedgerEvery dbOptions of
+                             Nothing -> Tracer.nullTracer
+                             Just n  -> traceLedgerDbSize (\slot -> slot `mod` n == 0) traceDbSize
         , cdbRegistry = rr
         , cdbGcDelay = secondsToDiffTime 20
         }
