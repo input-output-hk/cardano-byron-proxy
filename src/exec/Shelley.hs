@@ -104,5 +104,6 @@ mkParams rr cdb nconf nstate blockchainTime = NodeArgs
   , blockMatchesHeader = nodeBlockMatchesHeader
   , maxUnackTxs = maxBound
   , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO: make configurable!
-  , mempoolCap = MempoolCapacity 2048 -- TODO: is this value ok?
+  -- Mempool capacity limited to 200, sourced from the legacy cardano-sl config
+  , mempoolCap = MempoolCapacity 200
   }
