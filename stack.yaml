@@ -19,7 +19,7 @@ extra-deps:
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: edfbc26b34faae0d1f3e007a3ae21dd9716ca8f3
+    commit: a1de5b52c32255464564a6c5a8a9e474086e3875
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -41,7 +41,7 @@ extra-deps:
     commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: fc6a38f6d7cdfce53fad2c30870ff33b32633276
+    commit: d3e71facd53da4a2c72e4947f551ddeac45fba41
     subdirs:
       - ouroboros-consensus
       - ouroboros-network

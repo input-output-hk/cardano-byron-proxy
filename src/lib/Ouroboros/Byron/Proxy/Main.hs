@@ -41,6 +41,7 @@ import           Control.Lens                              ((^.))
 import           Control.Monad                             (forM, join, when)
 import           Control.Monad.Trans.Class                 (lift)
 import           Control.Tracer                            (Tracer, traceWith)
+import           Data.ByteString                           (ByteString)
 import           Data.Conduit                              (ConduitT, await,
                                                             runConduit, yield,
                                                             (.|))
@@ -51,6 +52,7 @@ import qualified Data.List.NonEmpty                        as NE
 import           Data.Map.Strict                           (Map)
 import qualified Data.Map.Strict                           as Map
 import           Data.Maybe                                (catMaybes,
+                                                            mapMaybe,
                                                             fromMaybe)
 import           Data.Ord                                  (comparing)
 import           Data.Proxy                                (Proxy (..))
@@ -63,6 +65,7 @@ import           Data.Time.Units                           (fromMicroseconds)
 
 import qualified Cardano.Binary                            as Binary
 import           Cardano.BM.Data.Severity                  (Severity (..))
+import           Cardano.Chain.MempoolPayload              (AMempoolPayload(MempoolTx))
 import           Cardano.Chain.Slotting                    (EpochSlots)
 import qualified Cardano.Chain.UTxO                        as Cardano
 import qualified Cardano.Crypto                            as Cardano (AbstractHash (..))
@@ -123,11 +126,11 @@ import           Ouroboros.Byron.Proxy.Index.Types         (Index)
 import qualified Ouroboros.Byron.Proxy.Index.Types         as Index
 import           Ouroboros.Byron.Proxy.Genesis.Convert     (convertEpochSlots)
 import           Ouroboros.Consensus.Block                 (getHeader)
-import           Ouroboros.Consensus.Ledger.Byron          (byronTx, byronTxId,
+import           Ouroboros.Consensus.Ledger.Byron          (GenTx(ByronTx),
                                                             encodeByronBlock,
-                                                            mkByronTx)
-import           Ouroboros.Consensus.Mempool.API           (ApplyTx, GenTx,
-                                                            GenTxId, Mempool)
+                                                            mkByronGenTx)
+import           Ouroboros.Consensus.Mempool.API           (ApplyTx, GenTxId,
+                                                            Mempool)
 import qualified Ouroboros.Consensus.Mempool.API           as Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq         (TicketNo)
 import           Ouroboros.Consensus.NodeKernel            (getMempoolReader,
@@ -284,9 +287,11 @@ txKeyValFromMempool mempool txTicketMapVar = KeyVal
     lookupTx = \txId -> atomically $ do
       snapshot <- Tx.Out.mempoolGetSnapshot reader
       ticketMap <- readTVar txTicketMapVar
-      let outcome = do
+      let outcome :: Maybe (Cardano.ATxAux ByteString)
+          outcome = do
             ticketNo <- Map.lookup (untag txId) ticketMap
-            Tx.Out.mempoolLookupTx snapshot ticketNo
+            image <- Tx.Out.mempoolLookupTx snapshot ticketNo
+            fmap snd (pickMoneyTransaction image)
       pure $ fmap toByronTxMsgContents outcome
 
 -- | Try to send every transaction found in the mempool out to the Byron
@@ -304,7 +309,8 @@ sendTxsFromMempool mempool diff = go (Mempool.zeroIdx mempool)
       -- Block until a non-empty list of transactions to send appears.
       txsToSend <- atomically $ do
         snapshot <- Mempool.getSnapshot mempool
-        let txsToSend = Mempool.snapshotTxsAfter snapshot ticketNo
+        -- We only relay money transactions.
+        let txsToSend = pickMoneyTransactions (Mempool.snapshotTxsAfter snapshot ticketNo)
         check (not (null txsToSend))
         pure txsToSend
       -- Left fold to take the TicketNo of the rightmost member.
@@ -314,10 +320,10 @@ sendTxsFromMempool mempool diff = go (Mempool.zeroIdx mempool)
 
     -- Left fold action over a list of transactions to send: send each one and
     -- keep the highest ticket number.
-    folder = \_ (tx, idx) -> do
+    folder = \_ ((_txid, txaux), idx) -> do
       -- Result is a Bool indicating whether it was accepted.
       -- We don't care.
-      _ <- sendTx diff (toByronTxAux tx)
+      _ <- sendTx diff (toByronTxAux txaux)
       pure idx
 
 -- | Keep a map from Byron transaction ids to ticket numbers in sync with the
@@ -345,9 +351,9 @@ updateMempoolIdMap mempool tvar = go [] (Mempool.zeroIdx mempool)
       -- that it will be faster this way as the mempool grows. Maybe it's not
       -- worth the trouble though?
       let removalList :: [TxId]
-          removalList = fmap (toByronTxId . byronTxId . fst) removals
+          removalList = fmap (toByronTxId . fst . fst) (pickMoneyTransactions removals)
           additionList :: [(TxId, TicketNo)]
-          additionList = fmap (first (toByronTxId . byronTxId)) additions
+          additionList = fmap (first (toByronTxId . fst)) (pickMoneyTransactions additions)
       modifyTVar' tvar $ \idmap ->
         foldl (flip (uncurry Map.insert)) (foldl (flip Map.delete) idmap removalList) additionList
       let currentTxs' = txs
@@ -362,10 +368,25 @@ updateMempoolIdMap mempool tvar = go [] (Mempool.zeroIdx mempool)
     takeUntilMatch ((a, b) : xs) ((_, b') : ys) | b == b'   = []
                                                 | otherwise = (a, b) : takeUntilMatch xs ys
 
+-- | The ouroboros-consensus transaction type includes update proposals, votes,
+-- and delegation certificates. We are interested only in money transactions.
+pickMoneyTransaction :: GenTx (Block cfg) -> Maybe (Cardano.TxId, Cardano.ATxAux ByteString)
+pickMoneyTransaction gtx = case gtx of
+  ByronTx txid txaux -> Just (txid, txaux)
+  _                  -> Nothing
+
+-- | Useful when filtering out mempool entries that come with ticket numbers
+-- in the second component.
+pickMoneyTransactions
+  :: [(GenTx (Block cfg), t)]
+  -> [((Cardano.TxId, Cardano.ATxAux ByteString), t)]
+pickMoneyTransactions = mapMaybe $ \(gtx, t) ->
+  fmap (flip (,) t) (pickMoneyTransaction gtx)
+
 toByronTxId :: Cardano.TxId -> TxId
 toByronTxId (Cardano.AbstractHash txId) = CSL.AbstractHash txId
 
-toByronTxMsgContents :: GenTx (Block cfg) -> TxMsgContents
+toByronTxMsgContents :: Cardano.ATxAux ByteString -> TxMsgContents
 toByronTxMsgContents = TxMsgContents . toByronTxAux
 
 fromByronTxMsgContents :: TxMsgContents -> GenTx (Block cfg)
@@ -375,21 +396,21 @@ fromByronTxMsgContents (TxMsgContents txAux) = fromByronTxAux txAux
 -- annotation. Conversion proceeds by decoding a Byron `TxAux` from that.
 -- It's basically an assertion failure if the decoding fails. It means our
 -- codec must be wrong.
-toByronTxAux :: GenTx (Block cfg) -> TxAux
-toByronTxAux tx = case (decodedTx, decodedWitness) of
+toByronTxAux :: Cardano.ATxAux ByteString -> TxAux
+toByronTxAux txaux = case (decodedTx, decodedWitness) of
     (Right tx', Right witness) -> TxAux tx' witness
     (Left err, _) -> error $ "toByronTxAux: Tx codec inconsistent " ++ show err
     (_, Left err) -> error $ "toByronTxAux: TxWitness codec inconsistent " ++ show err
   where
-    decodedTx      = CSL.decodeFull' (Binary.annotation (Cardano.aTaTx (byronTx tx)))
-    decodedWitness = CSL.decodeFull' (Binary.annotation (Cardano.aTaWitness (byronTx tx)))
+    decodedTx      = CSL.decodeFull' (Binary.annotation (Cardano.aTaTx txaux))
+    decodedWitness = CSL.decodeFull' (Binary.annotation (Cardano.aTaWitness txaux))
 
--- In order to get a `GenTx (Block cfg)`, we need `ByteString` annotations on
+-- | In order to get a `GenTx (Block cfg)`, we need `ByteString` annotations on
 -- its parts. Only way to get that is to encode parts of the transaction.
 fromByronTxAux :: TxAux -> GenTx (Block cfg)
 fromByronTxAux txAux = case Binary.decodeFullAnnotatedBytes "TxAux" decoder cslBytes of
-    Right txAux' -> mkByronTx txAux'
-    Left  err   -> error $ "fromByronTxAux: TxAux codec inconsistent " ++ show err
+    Right txAux' -> mkByronGenTx (MempoolTx txAux')
+    Left  err    -> error $ "fromByronTxAux: TxAux codec inconsistent " ++ show err
   where
     cslBytes = CSL.serialize txAux
     decoder :: Decoder s (Cardano.ATxAux Binary.ByteSpan)
@@ -777,8 +798,12 @@ withByronProxy trace bpc idx db mempool k = do
           , postBlockHeader    = \header peer -> atomically $
               modifyTVar' tipsTVar $ Just . updateBestTipMaybe peer header
 
+          -- Money transactions _are_ added to the mempool and relayed, but
+          -- other atomic (non-block) data are not.
           , postTx            = txKeyValFromMempool mempool txTicketMapVar
 
+          -- Update proposals, update votes, and SSC stuff are not added to
+          -- the mempool nor relayed.
           , postUpdate        = taggedKeyValNoOp
               (Proxy :: Proxy (UpdateProposal, [UpdateVote]))
               (hash . fst)
@@ -798,9 +823,8 @@ withByronProxy trace bpc idx db mempool k = do
               (Proxy :: Proxy MCVssCertificate)
               (\(MCVssCertificate vc) -> getCertId vc)
 
-          -- Nothing to do for delegation certificates.
-          -- FIXME verify that this meets requirements.
-          , postPskHeavy = \_ -> pure True
+          -- Do not put the cert into the mempool. Do not relay it (give False).
+          , postPskHeavy = \_ -> pure False
 
           -- Given a bunch of hashes, find LCA with main chain.
           -- With only the immutable, we just need to get the tip and that

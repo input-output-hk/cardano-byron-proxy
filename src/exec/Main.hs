@@ -83,9 +83,8 @@ import Ouroboros.Consensus.Node.ProtocolInfo.Byron (PBftSignatureThreshold (..),
 import Ouroboros.Network.NodeToNode (IPSubscriptionTarget (..), withServer, ipSubscriptionWorker)
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (withRegistry)
-import Ouroboros.Network.Block (SlotNo (..), Point (..))
+import Ouroboros.Network.Block (BlockNo (..), Point (..))
 import Ouroboros.Network.Point (WithOrigin (..))
-import qualified Ouroboros.Network.Point as Point (Block (..))
 import Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
 import Ouroboros.Network.Protocol.Handshake.Version (DictVersion (..))
 import Ouroboros.Network.Server.ConnectionTable (ConnectionTable)
@@ -486,16 +485,17 @@ main = do
         let Tracer doConvertedTrace = Logging.convertTrace trace
             dbTracer :: Tracer IO (TraceEvent (Block ByronConfig))
             dbTracer = Tracer $ \trEvent -> case trEvent of
-              TraceAddBlockEvent (AddedBlockToVolDB point) -> case point of
+              TraceAddBlockEvent (AddedBlockToVolDB point (BlockNo blockno) _) -> case point of
                 Point Origin -> pure ()
-                Point (At (Point.Block (SlotNo slotno) _)) ->
+                Point (At _) ->
                   -- NB this is here because devops wanted an EKG metric on
                   -- block count. FIXME should be done in a more sane way...
-                  let val = ("db", Monitoring.Info, Monitoring.LogValue "block count" (Monitoring.PureI (fromIntegral slotno)))
-                  in  doConvertedTrace val
+                  let val  = Monitoring.PureI (fromIntegral blockno)
+                      item = ("db", Monitoring.Info, Monitoring.LogValue "block count" val)
+                  in  doConvertedTrace item
               TraceAddBlockEvent (AddBlockValidation it@(InvalidBlock _ _)) ->
                   let val = ("db", Monitoring.Error, Monitoring.LogMessage (fromString (show it)))
-                  in  doConvertedTrace val >> error ("oops: " ++ show it)
+                  in  doConvertedTrace val
               _ -> pure ()
             indexTracer :: Tracer IO Index.TraceEvent
             indexTracer = Tracer $ \trEvent ->

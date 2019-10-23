@@ -17,9 +17,10 @@ import Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF(..))
 
 import Ouroboros.Byron.Proxy.Block (Block)
 import Ouroboros.Consensus.Block (BlockProtocol)
-import Ouroboros.Consensus.Protocol (NodeConfig, NodeState)
+import Ouroboros.Consensus.Protocol (NodeConfig, NodeState, protocolNetworkMagic)
 import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
+import Ouroboros.Consensus.Mempool.Impl (MempoolCapacity (..))
 import Ouroboros.Consensus.Util.Condense (Condense (..))
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import Ouroboros.Storage.ChainDB.API (ChainDB)
@@ -70,17 +71,14 @@ withShelley rr cdb conf state blockchainTime k = do
         nullProtocolTracers
         (protocolCodecs conf)
         (protocolHandlers nodeParams kernel)
-      vs = versions apps
+      vs = versions conf apps
   k kernel ctable (initiatorNetworkApplication <$> vs) (responderNetworkApplication <$> vs)
 
--- | Found in cardano-node that the network magic should be 0.
-vData :: NodeToNodeVersionData
-vData = NodeToNodeVersionData { networkMagic = 0 }
-
 versions
-  :: NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
+  :: ( ByronGiven )
+  => NodeConfig (BlockProtocol (Block ByronConfig)) -> NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
   -> Versions NodeToNodeVersion DictVersion (NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ())
-versions = simpleSingletonVersions NodeToNodeV_1 vData (DictVersion nodeToNodeCodecCBORTerm)
+versions conf = simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData (protocolNetworkMagic conf)) (DictVersion nodeToNodeCodecCBORTerm)
 
 mkParams
   :: ( ByronGiven )
@@ -106,4 +104,6 @@ mkParams rr cdb nconf nstate blockchainTime = NodeArgs
   , blockMatchesHeader = nodeBlockMatchesHeader
   , maxUnackTxs = maxBound
   , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO: make configurable!
+  -- Mempool capacity limited to 200, sourced from the legacy cardano-sl config
+  , mempoolCap = MempoolCapacity 200
   }
