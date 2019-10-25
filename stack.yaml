@@ -12,14 +12,14 @@ extra-deps:
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 13e7ffbc142eb1b9d7266c8f5373d787acb65266
+    commit: 5c575d46afbfe333de0ccba70b084db8302abf42
     subdirs:
       - binary
       - binary/test
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: a1de5b52c32255464564a6c5a8a9e474086e3875
+    commit: 181f69af290412abecefc07e1b26e77a453755ff
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -27,13 +27,13 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: b9bf62f2bab90539809bee13620fe7d29b35928d
+    commit: ad19158c7599bc5d50fe7cb0111a1488a139a381
     subdirs:
       - .
       - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: 8b8437fa2c0cd7e0c1f0ee94ae1565dbcf5617d0
+    commit: 8abae427c44f0b447117f78e2c1f5006dac2edf8
     subdirs:
       - cardano-shell
 
@@ -41,7 +41,7 @@ extra-deps:
     commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: d3e71facd53da4a2c72e4947f551ddeac45fba41
+    commit: b7d3ef6c68169e5ce4396b26085a9cebc500f615
     subdirs:
       - ouroboros-consensus
       - ouroboros-network
@@ -71,7 +71,7 @@ extra-deps:
 
   # The parts of cardano-sl that are needed for the byron proxy.
   - git: https://github.com/input-output-hk/cardano-sl
-    commit: 4f8cbfc63a7c741108995469a08d70202dda3e0c
+    commit: 2a5b5769799fd220e2ff6a6b09a1832d8e6f06c0
     subdirs:
       - lib
       - binary
