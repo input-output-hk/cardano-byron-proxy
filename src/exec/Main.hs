@@ -282,6 +282,13 @@ cliParser = ByronProxyOptions
               , Opt.metavar "FILEPATH"
               , Opt.help "Path to a YAML file containing the network policies"
               ]
+      ncoCheckPeerHost <-
+          (not <$>) .
+          Opt.switch $
+          mconcat
+              [ Opt.long "disable-peer-host-check"
+              , Opt.help "DANGER: disable the peer host address consistency check. Makes your node vulnerable"
+              ]
       ncoExternalAddress <- Opt.optional $ CSL.externalNetworkAddressOption Nothing
       ncoBindAddress <- Opt.optional $ CSL.listenNetworkAddressOption Nothing
       pure $ CSL.NetworkConfigOpts
@@ -292,6 +299,7 @@ cliParser = ByronProxyOptions
         , CSL.ncoPolicies = ncoPolicies
         , CSL.ncoExternalAddress = ncoExternalAddress
         , CSL.ncoBindAddress = ncoBindAddress
+        , CSL.ncoCheckPeerHost = ncoCheckPeerHost
         }
 
   dashconcat :: [String] -> String
