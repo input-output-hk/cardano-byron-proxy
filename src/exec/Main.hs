@@ -80,7 +80,7 @@ import Ouroboros.Consensus.Node (getMempool)
 import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..))
 import Ouroboros.Consensus.Node.ProtocolInfo.Byron (PBftSignatureThreshold (..),
            protocolInfoByron)
-import Ouroboros.Network.NodeToNode (IPSubscriptionTarget (..), withServer, ipSubscriptionWorker)
+import Ouroboros.Network.NodeToNode (IPSubscriptionTarget (..), LocalAddresses (..), withServer, ipSubscriptionWorker)
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (withRegistry)
 import Ouroboros.Network.Block (BlockNo (..), Point (..))
@@ -282,6 +282,13 @@ cliParser = ByronProxyOptions
               , Opt.metavar "FILEPATH"
               , Opt.help "Path to a YAML file containing the network policies"
               ]
+      ncoCheckPeerHost <-
+          (not <$>) .
+          Opt.switch $
+          mconcat
+              [ Opt.long "disable-peer-host-check"
+              , Opt.help "DANGER: disable the peer host address consistency check. Makes your node vulnerable"
+              ]
       ncoExternalAddress <- Opt.optional $ CSL.externalNetworkAddressOption Nothing
       ncoBindAddress <- Opt.optional $ CSL.listenNetworkAddressOption Nothing
       pure $ CSL.NetworkConfigOpts
@@ -292,6 +299,7 @@ cliParser = ByronProxyOptions
         , CSL.ncoPolicies = ncoPolicies
         , CSL.ncoExternalAddress = ncoExternalAddress
         , CSL.ncoBindAddress = ncoBindAddress
+        , CSL.ncoCheckPeerHost = ncoCheckPeerHost
         }
 
   dashconcat :: [String] -> String
@@ -342,8 +350,10 @@ runShelleyClient producerAddrs _ ctable iversions = do
     nullTracer
     Shelley.mkPeer
     ctable
-    (Just (Network.SockAddrInet 0 0))
-    (Just (Network.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
+    (LocalAddresses
+     (Just (Network.SockAddrInet 0 0))
+     (Just (Network.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
+     Nothing)
     (const Nothing)
     (IPSubscriptionTarget {
          ispIps     = fmap Network.addrAddress sockAddrs

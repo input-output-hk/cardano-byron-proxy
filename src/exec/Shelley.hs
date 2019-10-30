@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Shelley where
 
@@ -13,11 +14,11 @@ import Cardano.Chain.UTxO.Validation ()
 import Crypto.Random (drgNew)
 import qualified Network.Socket as Socket
 
-import Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF(..))
+import Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF(..), Proxy(..))
 
 import Ouroboros.Byron.Proxy.Block (Block)
 import Ouroboros.Consensus.Block (BlockProtocol)
-import Ouroboros.Consensus.Protocol (NodeConfig, NodeState, protocolNetworkMagic)
+import Ouroboros.Consensus.Protocol (NodeConfig, NodeState)
 import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
 import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
 import Ouroboros.Consensus.Mempool.Impl (MempoolCapacity (..))
@@ -78,7 +79,7 @@ versions
   :: ( ByronGiven )
   => NodeConfig (BlockProtocol (Block ByronConfig)) -> NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
   -> Versions NodeToNodeVersion DictVersion (NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ())
-versions conf = simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData (protocolNetworkMagic conf)) (DictVersion nodeToNodeCodecCBORTerm)
+versions conf = simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData (nodeNetworkMagic (Proxy @(Block ByronConfig)) conf)) (DictVersion nodeToNodeCodecCBORTerm)
 
 mkParams
   :: ( ByronGiven )

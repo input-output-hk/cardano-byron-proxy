@@ -39,17 +39,17 @@ let
       '';
 in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
   {
-    flags = {};
+    flags = { development = false; };
     package = {
       specVersion = "1.10";
-      identifier = { name = "rocksdb-haskell-ng"; version = "0.0.0"; };
+      identifier = { name = "small-steps"; version = "0.1.0.0"; };
       license = "BSD-3-Clause";
       copyright = "";
-      maintainer = "";
-      author = "";
-      homepage = "";
+      maintainer = "formal.methods@iohk.io";
+      author = "IOHK Formal Methods Team";
+      homepage = "https://github.com/input-output-hk/cardano-chain";
       url = "";
-      synopsis = "";
+      synopsis = "Small step semantics";
       description = "";
       buildType = "Simple";
       isLocal = true;
@@ -58,39 +58,49 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
       "library" = {
         depends = [
           (hsPkgs."base" or (buildDepError "base"))
-          (hsPkgs."bytestring" or (buildDepError "bytestring"))
-          (hsPkgs."directory" or (buildDepError "directory"))
+          (hsPkgs."containers" or (buildDepError "containers"))
+          (hsPkgs."cryptonite" or (buildDepError "cryptonite"))
+          (hsPkgs."free" or (buildDepError "free"))
+          (hsPkgs."goblins" or (buildDepError "goblins"))
+          (hsPkgs."hedgehog" or (buildDepError "hedgehog"))
+          (hsPkgs."tasty-hunit" or (buildDepError "tasty-hunit"))
+          (hsPkgs."lens" or (buildDepError "lens"))
+          (hsPkgs."mtl" or (buildDepError "mtl"))
+          (hsPkgs."transformers" or (buildDepError "transformers"))
+          (hsPkgs."cardano-crypto-class" or (buildDepError "cardano-crypto-class"))
           ];
-        libs = [ (pkgs."rocksdb" or (sysDepError "rocksdb")) ];
         buildable = true;
         };
       tests = {
-        "test" = {
+        "doctests" = {
           depends = [
             (hsPkgs."base" or (buildDepError "base"))
-            (hsPkgs."rocksdb-haskell-ng" or (buildDepError "rocksdb-haskell-ng"))
-            (hsPkgs."hspec" or (buildDepError "hspec"))
-            (hsPkgs."QuickCheck" or (buildDepError "QuickCheck"))
-            (hsPkgs."temporary" or (buildDepError "temporary"))
-            (hsPkgs."directory" or (buildDepError "directory"))
-            (hsPkgs."filepath" or (buildDepError "filepath"))
-            (hsPkgs."deepseq" or (buildDepError "deepseq"))
+            (hsPkgs."containers" or (buildDepError "containers"))
+            (hsPkgs."data-default" or (buildDepError "data-default"))
+            (hsPkgs."free" or (buildDepError "free"))
+            (hsPkgs."hedgehog" or (buildDepError "hedgehog"))
+            (hsPkgs."tasty-hunit" or (buildDepError "tasty-hunit"))
+            (hsPkgs."lens" or (buildDepError "lens"))
+            (hsPkgs."mtl" or (buildDepError "mtl"))
+            (hsPkgs."sequence" or (buildDepError "sequence"))
+            (hsPkgs."transformers" or (buildDepError "transformers"))
+            (hsPkgs."doctest" or (buildDepError "doctest"))
+            (hsPkgs."small-steps" or (buildDepError "small-steps"))
+            ];
+          build-tools = [
+            (hsPkgs.buildPackages.doctest-discover or (pkgs.buildPackages.doctest-discover or (buildToolDepError "doctest-discover")))
             ];
           buildable = true;
           };
-        };
-      benchmarks = {
-        "speed" = {
+        "examples" = {
           depends = [
             (hsPkgs."base" or (buildDepError "base"))
-            (hsPkgs."rocksdb-haskell-ng" or (buildDepError "rocksdb-haskell-ng"))
-            (hsPkgs."criterion" or (buildDepError "criterion"))
-            (hsPkgs."hspec" or (buildDepError "hspec"))
-            (hsPkgs."QuickCheck" or (buildDepError "QuickCheck"))
-            (hsPkgs."temporary" or (buildDepError "temporary"))
-            (hsPkgs."directory" or (buildDepError "directory"))
-            (hsPkgs."filepath" or (buildDepError "filepath"))
-            (hsPkgs."deepseq" or (buildDepError "deepseq"))
+            (hsPkgs."containers" or (buildDepError "containers"))
+            (hsPkgs."hedgehog" or (buildDepError "hedgehog"))
+            (hsPkgs."tasty" or (buildDepError "tasty"))
+            (hsPkgs."tasty-hedgehog" or (buildDepError "tasty-hedgehog"))
+            (hsPkgs."tasty-expected-failure" or (buildDepError "tasty-expected-failure"))
+            (hsPkgs."small-steps" or (buildDepError "small-steps"))
             ];
           buildable = true;
           };
@@ -98,8 +108,9 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
-      url = "https://github.com/input-output-hk/rocksdb-haskell-ng";
-      rev = "49f501a082d745f3b880677220a29cafaa181452";
-      sha256 = "02jvri8ik8jgrxwa6qmh3xcwqvm4s27iv3sxpjpny79nlhlxvfzp";
+      url = "https://github.com/input-output-hk/cardano-ledger-specs";
+      rev = "0d7e670952657c23a6486bfa15e9d10166351986";
+      sha256 = "1anikzb6ypi8zz973h7fap9djjbrqvw5mhqrch6av05xqkaqx3jv";
       });
+    postUnpack = "sourceRoot+=/byron/semantics/executable-spec; echo source root reset to \$sourceRoot";
     }

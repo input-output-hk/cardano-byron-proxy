@@ -8,7 +8,7 @@ module DB
   ) where
 
 import           Control.Exception                         (bracket)
-import           Control.Tracer                            (Tracer)
+import           Control.Tracer                            (Tracer, nullTracer)
 import qualified Data.Reflection                           as Reflection (given)
 import           Data.Time.Clock                           (secondsToDiffTime)
 import qualified System.Directory                          (createDirectoryIfMissing)
@@ -124,6 +124,7 @@ withDB dbOptions dbTracer indexTracer rr nodeConfig extLedgerState k = do
         , cdbGenesis = pure extLedgerState
 
         , cdbTracer = dbTracer
+        , cdbTraceLedger = nullTracer
         , cdbRegistry = rr
         , cdbGcDelay = secondsToDiffTime 20
         }
