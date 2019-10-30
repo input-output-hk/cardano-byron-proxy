@@ -63,11 +63,11 @@ convertProtocolMagicId pmid = Cardano.ProtocolMagicId (fromIntegral (CSL.unProto
 convertAvvmDistr :: CSL.GenesisAvvmBalances -> Cardano.GenesisAvvmBalances
 convertAvvmDistr = Cardano.GenesisAvvmBalances . Map.fromList . fmap convertPair . HashMap.toList . CSL.getGenesisAvvmBalances
   where
-  convertPair :: (CSL.RedeemPublicKey, CSL.Coin) -> (Cardano.RedeemVerificationKey, Cardano.Lovelace)
+  convertPair :: (CSL.RedeemPublicKey, CSL.Coin) -> (Cardano.CompactRedeemVerificationKey, Cardano.Lovelace)
   convertPair (pubkey, coin) = (convertRedeemPublicKey pubkey, convertCoin coin)
 
-convertRedeemPublicKey :: CSL.RedeemPublicKey -> Cardano.RedeemVerificationKey
-convertRedeemPublicKey (CSL.RedeemPublicKey pubkey) = Cardano.RedeemVerificationKey pubkey
+convertRedeemPublicKey :: CSL.RedeemPublicKey -> Cardano.CompactRedeemVerificationKey
+convertRedeemPublicKey (CSL.RedeemPublicKey pubkey) = Cardano.toCompactRedeemVerificationKey $ Cardano.RedeemVerificationKey pubkey
 
 convertHeavyDelegation :: CSL.GenesisDelegation -> Cardano.GenesisDelegation
 convertHeavyDelegation = Cardano.UnsafeGenesisDelegation . Map.fromList . fmap convertPair . HashMap.toList . CSL.unGenesisDelegation
