@@ -30,7 +30,7 @@ let
   # commonLib provides iohk-nix tooling and extra libraries specific to cardano-sl.
   commonLib = import ./lib.nix;
   # nixTools contains all the haskell binaries and libraries built by haskell.nix
-  nixTools = import ./nix/nix-tools.nix {};
+  haskellPackages = import ./nix/pkgs.nix {};
   # cardano-sl
   inherit (commonLib) cardanoConfig environments;
 
@@ -42,5 +42,4 @@ let
   nixosTests = import ./nix/nixos/tests { inherit (commonLib) pkgs; };
 in {
   inherit scripts nixosTests environments;
-  inherit (nixTools) nix-tools;
-}
+} // haskellPackages
