@@ -39,18 +39,18 @@ let
       '';
 in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
   {
-    flags = {};
+    flags = { development = false; };
     package = {
-      specVersion = "2.0";
-      identifier = { name = "log-warper"; version = "1.8.10.1"; };
-      license = "MIT";
-      copyright = "2016-2018 Serokell";
-      maintainer = "Serokell <hi@serokell.io>";
-      author = "@serokell";
-      homepage = "https://github.com/serokell/log-warper";
+      specVersion = "1.10";
+      identifier = { name = "goblins"; version = "0.1.0.0"; };
+      license = "BSD-3-Clause";
+      copyright = "";
+      maintainer = "nick@topos.org.uk";
+      author = "Nicholas Clarke";
+      homepage = "https://github.com/input-output-hk/goblins";
       url = "";
-      synopsis = "Flexible, configurable, monadic and pretty logging";
-      description = "This package implements nice and featureful wrapper around hslogger library.";
+      synopsis = "Genetic algorithm based randomised testing";
+      description = "";
       buildType = "Simple";
       isLocal = true;
       };
@@ -58,36 +58,41 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
       "library" = {
         depends = [
           (hsPkgs."base" or (buildDepError "base"))
-          (hsPkgs."aeson" or (buildDepError "aeson"))
-          (hsPkgs."ansi-terminal" or (buildDepError "ansi-terminal"))
+          (hsPkgs."bimap" or (buildDepError "bimap"))
+          (hsPkgs."binary" or (buildDepError "binary"))
+          (hsPkgs."bytestring" or (buildDepError "bytestring"))
           (hsPkgs."containers" or (buildDepError "containers"))
-          (hsPkgs."deepseq" or (buildDepError "deepseq"))
-          (hsPkgs."directory" or (buildDepError "directory"))
-          (hsPkgs."filepath" or (buildDepError "filepath"))
-          (hsPkgs."fmt" or (buildDepError "fmt"))
-          (hsPkgs."lifted-async" or (buildDepError "lifted-async"))
-          (hsPkgs."microlens-platform" or (buildDepError "microlens-platform"))
-          (hsPkgs."monad-control" or (buildDepError "monad-control"))
-          (hsPkgs."monad-loops" or (buildDepError "monad-loops"))
+          (hsPkgs."extra" or (buildDepError "extra"))
+          (hsPkgs."hedgehog" or (buildDepError "hedgehog"))
+          (hsPkgs."lens" or (buildDepError "lens"))
           (hsPkgs."mmorph" or (buildDepError "mmorph"))
-          (hsPkgs."mtl" or (buildDepError "mtl"))
-          (hsPkgs."o-clock" or (buildDepError "o-clock"))
-          (hsPkgs."text" or (buildDepError "text"))
-          (hsPkgs."time" or (buildDepError "time"))
+          (hsPkgs."monad-control" or (buildDepError "monad-control"))
+          (hsPkgs."moo" or (buildDepError "moo"))
+          (hsPkgs."random" or (buildDepError "random"))
+          (hsPkgs."template-haskell" or (buildDepError "template-haskell"))
+          (hsPkgs."th-utilities" or (buildDepError "th-utilities"))
           (hsPkgs."transformers" or (buildDepError "transformers"))
-          (hsPkgs."transformers-base" or (buildDepError "transformers-base"))
-          (hsPkgs."universum" or (buildDepError "universum"))
-          (hsPkgs."unordered-containers" or (buildDepError "unordered-containers"))
-          (hsPkgs."vector" or (buildDepError "vector"))
-          (hsPkgs."yaml" or (buildDepError "yaml"))
-          ] ++ (pkgs.lib).optional (!system.isWindows) (hsPkgs."unix" or (buildDepError "unix"));
+          (hsPkgs."tree-diff" or (buildDepError "tree-diff"))
+          (hsPkgs."typerep-map" or (buildDepError "typerep-map"))
+          ];
         buildable = true;
+        };
+      tests = {
+        "goblin-test" = {
+          depends = [
+            (hsPkgs."base" or (buildDepError "base"))
+            (hsPkgs."hedgehog" or (buildDepError "hedgehog"))
+            (hsPkgs."goblins" or (buildDepError "goblins"))
+            (hsPkgs."temporary" or (buildDepError "temporary"))
+            ];
+          buildable = true;
+          };
         };
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
-      url = "https://github.com/input-output-hk/log-warper";
-      rev = "16246d4fbf16da7984f2a4b6c42f2ed5098182e4";
-      sha256 = "11vw6h3lshhwrjbxni6z0jr6w9x2x338rv6p2b4b0rgr650pv2a9";
+      url = "https://github.com/input-output-hk/goblins";
+      rev = "26d35ad52fe9ade3391532dbfeb2f416f07650bc";
+      sha256 = "17p5x0hj6c67jkdqx0cysqlwq2zs2l87azihn1alzajy9ak6ii0b";
       });
     }

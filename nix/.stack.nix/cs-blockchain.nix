@@ -39,18 +39,18 @@ let
       '';
 in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
   {
-    flags = {};
+    flags = { development = false; };
     package = {
-      specVersion = "2.0";
-      identifier = { name = "log-warper"; version = "1.8.10.1"; };
+      specVersion = "1.10";
+      identifier = { name = "cs-blockchain"; version = "0.1.0.0"; };
       license = "MIT";
-      copyright = "2016-2018 Serokell";
-      maintainer = "Serokell <hi@serokell.io>";
-      author = "@serokell";
-      homepage = "https://github.com/serokell/log-warper";
+      copyright = "";
+      maintainer = "formal.methods@iohk.io";
+      author = "IOHK Formal Methods Team";
+      homepage = "https://github.com/input-output-hk/cardano-chain";
       url = "";
-      synopsis = "Flexible, configurable, monadic and pretty logging";
-      description = "This package implements nice and featureful wrapper around hslogger library.";
+      synopsis = "Executable specification of the Cardano blockchain";
+      description = "";
       buildType = "Simple";
       isLocal = true;
       };
@@ -58,36 +58,42 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
       "library" = {
         depends = [
           (hsPkgs."base" or (buildDepError "base"))
-          (hsPkgs."aeson" or (buildDepError "aeson"))
-          (hsPkgs."ansi-terminal" or (buildDepError "ansi-terminal"))
+          (hsPkgs."bimap" or (buildDepError "bimap"))
+          (hsPkgs."bytestring" or (buildDepError "bytestring"))
           (hsPkgs."containers" or (buildDepError "containers"))
-          (hsPkgs."deepseq" or (buildDepError "deepseq"))
-          (hsPkgs."directory" or (buildDepError "directory"))
-          (hsPkgs."filepath" or (buildDepError "filepath"))
-          (hsPkgs."fmt" or (buildDepError "fmt"))
-          (hsPkgs."lifted-async" or (buildDepError "lifted-async"))
-          (hsPkgs."microlens-platform" or (buildDepError "microlens-platform"))
-          (hsPkgs."monad-control" or (buildDepError "monad-control"))
-          (hsPkgs."monad-loops" or (buildDepError "monad-loops"))
-          (hsPkgs."mmorph" or (buildDepError "mmorph"))
-          (hsPkgs."mtl" or (buildDepError "mtl"))
-          (hsPkgs."o-clock" or (buildDepError "o-clock"))
-          (hsPkgs."text" or (buildDepError "text"))
-          (hsPkgs."time" or (buildDepError "time"))
-          (hsPkgs."transformers" or (buildDepError "transformers"))
-          (hsPkgs."transformers-base" or (buildDepError "transformers-base"))
-          (hsPkgs."universum" or (buildDepError "universum"))
-          (hsPkgs."unordered-containers" or (buildDepError "unordered-containers"))
-          (hsPkgs."vector" or (buildDepError "vector"))
-          (hsPkgs."yaml" or (buildDepError "yaml"))
-          ] ++ (pkgs.lib).optional (!system.isWindows) (hsPkgs."unix" or (buildDepError "unix"));
+          (hsPkgs."cs-ledger" or (buildDepError "cs-ledger"))
+          (hsPkgs."goblins" or (buildDepError "goblins"))
+          (hsPkgs."hashable" or (buildDepError "hashable"))
+          (hsPkgs."hedgehog" or (buildDepError "hedgehog"))
+          (hsPkgs."lens" or (buildDepError "lens"))
+          (hsPkgs."small-steps" or (buildDepError "small-steps"))
+          ];
         buildable = true;
+        };
+      tests = {
+        "chain-rules-test" = {
+          depends = [
+            (hsPkgs."base" or (buildDepError "base"))
+            (hsPkgs."containers" or (buildDepError "containers"))
+            (hsPkgs."data-ordlist" or (buildDepError "data-ordlist"))
+            (hsPkgs."hedgehog" or (buildDepError "hedgehog"))
+            (hsPkgs."lens" or (buildDepError "lens"))
+            (hsPkgs."tasty" or (buildDepError "tasty"))
+            (hsPkgs."tasty-hedgehog" or (buildDepError "tasty-hedgehog"))
+            (hsPkgs."tasty-hunit" or (buildDepError "tasty-hunit"))
+            (hsPkgs."cs-blockchain" or (buildDepError "cs-blockchain"))
+            (hsPkgs."cs-ledger" or (buildDepError "cs-ledger"))
+            (hsPkgs."small-steps" or (buildDepError "small-steps"))
+            ];
+          buildable = true;
+          };
         };
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
-      url = "https://github.com/input-output-hk/log-warper";
-      rev = "16246d4fbf16da7984f2a4b6c42f2ed5098182e4";
-      sha256 = "11vw6h3lshhwrjbxni6z0jr6w9x2x338rv6p2b4b0rgr650pv2a9";
+      url = "https://github.com/input-output-hk/cardano-ledger-specs";
+      rev = "0d7e670952657c23a6486bfa15e9d10166351986";
+      sha256 = "1anikzb6ypi8zz973h7fap9djjbrqvw5mhqrch6av05xqkaqx3jv";
       });
+    postUnpack = "sourceRoot+=/byron/chain/executable-spec; echo source root reset to \$sourceRoot";
     }
