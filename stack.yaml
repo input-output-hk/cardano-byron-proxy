@@ -50,9 +50,6 @@ extra-deps:
       - typed-protocols
       - typed-protocols-cbor
 
-  - git: https://github.com/well-typed/canonical-json
-    commit: ddfe3593b80b5ceb88842bb7a6f2268df75d2c2f
-
   - bimap-0.4.0
   - binary-0.8.7.0
   - time-units-1.0.0

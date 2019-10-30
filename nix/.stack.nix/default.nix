@@ -50,7 +50,6 @@
         network-mux = ./network-mux.nix;
         typed-protocols = ./typed-protocols.nix;
         typed-protocols-cbor = ./typed-protocols-cbor.nix;
-        canonical-json = ./canonical-json.nix;
         cardano-sl = ./cardano-sl.nix;
         cardano-sl-binary = ./cardano-sl-binary.nix;
         cardano-sl-binary-test = ./cardano-sl-binary-test.nix;
