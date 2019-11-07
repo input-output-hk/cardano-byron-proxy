@@ -515,7 +515,7 @@ main = do
         -- Thread registry is needed by ChainDB and by the network protocols.
         -- I assume it's supposed to be shared?
         ResourceRegistry.withRegistry $ \rr -> do
-          let protocolVersion = Cardano.ProtocolVersion 1 0 0
+          let protocolVersion = Cardano.ProtocolVersion 0 0 0
               softwareVersion = Cardano.SoftwareVersion
                 (Cardano.ApplicationName (fromString "cardano-byron-proxy")) 2
               protocolInfo = protocolInfoByron

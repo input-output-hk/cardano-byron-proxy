@@ -19,7 +19,7 @@ extra-deps:
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 181f69af290412abecefc07e1b26e77a453755ff
+    commit: ad96c9a1d3be469a7d4f10ee1c443cdb15a12b19
     subdirs:
       - cardano-ledger
       - cardano-ledger/test
@@ -68,7 +68,7 @@ extra-deps:
 
   # The parts of cardano-sl that are needed for the byron proxy.
   - git: https://github.com/input-output-hk/cardano-sl
-    commit: 2a5b5769799fd220e2ff6a6b09a1832d8e6f06c0
+    commit: 35871b5f912f5dd09be6e0cfa89e372046d65bbc
     subdirs:
       - lib
       - binary
