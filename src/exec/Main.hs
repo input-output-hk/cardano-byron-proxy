@@ -515,7 +515,21 @@ main = do
         -- Thread registry is needed by ChainDB and by the network protocols.
         -- I assume it's supposed to be shared?
         ResourceRegistry.withRegistry $ \rr -> do
-          let protocolVersion = Cardano.ProtocolVersion 0 0 0
+          let -- The "protocol" version means the "blockchain" version, relevant
+              -- to the update system. This is the initial version for updates.
+              -- It is _not_ a part of the blockchain genesis, but it
+              -- nevertheless must be configured properly or update proposals
+              -- may be accepted on one node and not on another. We pull it
+              -- from the cardano-sl configuration.
+              cslBlockVersion = CSL.lastKnownBlockVersion (CSL.ccUpdate yamlConfig)
+              major = CSL.bvMajor cslBlockVersion
+              minor = CSL.bvMinor cslBlockVersion
+              alt   = CSL.bvAlt   cslBlockVersion
+              protocolVersion = Cardano.ProtocolVersion
+                { Cardano.pvMajor = major
+                , Cardano.pvMinor = minor
+                , Cardano.pvAlt   = alt
+                }
               softwareVersion = Cardano.SoftwareVersion
                 (Cardano.ApplicationName (fromString "cardano-byron-proxy")) 2
               protocolInfo = protocolInfoByron
