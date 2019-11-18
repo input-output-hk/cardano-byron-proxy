@@ -26,6 +26,7 @@ in {
             ${optionalString (cfg.nodeId != null) "--node-id ${cfg.nodeId}"} \
             ${optionalString (cfg.listen != null) "--listen ${cfg.listen}"} \
             ${optionalString (cfg.address != null) "--address ${cfg.address}"} \
+            ${optionalString (cfg.extraOptions != null) "${cfg.extraOptions}"}
         '';
       };
 
@@ -62,6 +63,14 @@ in {
         default = envConfig.pbftThreshold or null;
         description = ''
           PBFT Threshold
+        '';
+      };
+
+      extraOptions = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = ''
+          Extra options.
         '';
       };
 
