@@ -5,7 +5,7 @@
 with import ../../lib.nix;
 let
   cfg = config.services.byron-proxy;
-  envConfig = environments.${cfg.environment};
+  envConfig = cfg.cardanoLib.environments.${cfg.environment};
 in {
   options = {
     services.byron-proxy = {
@@ -17,7 +17,7 @@ in {
             +RTS -T -RTS \
             --database-path ${cfg.stateDir}/db \
             --index-path ${cfg.stateDir}/index \
-            --configuration-file ${cardanoConfig}/configuration.yaml \
+            --configuration-file ${cfg.cardanoLib.cardanoConfig}/configuration.yaml \
             --configuration-key ${envConfig.confKey} \
             --topology ${cfg.topologyFile} \
             --logger-config ${cfg.logger.configFile} \
@@ -26,6 +26,7 @@ in {
             ${optionalString (cfg.nodeId != null) "--node-id ${cfg.nodeId}"} \
             ${optionalString (cfg.listen != null) "--listen ${cfg.listen}"} \
             ${optionalString (cfg.address != null) "--address ${cfg.address}"} \
+            ${optionalString (cfg.extraOptions != null) "${cfg.extraOptions}"}
         '';
       };
 
@@ -38,8 +39,19 @@ in {
         '';
       };
 
+      cardanoLib =  mkOption {
+        type = types.attrs;
+        default = {
+          inherit cardanoConfig environments;
+        };
+        defaultText = "cardano-lib (from iohk-nix)";
+        description = ''
+         Cardano-lib to use for configuration.
+        '';
+      };
+
       environment = mkOption {
-        type = types.enum (builtins.attrNames environments);
+        type = types.enum (builtins.attrNames cfg.cardanoLib.environments);
         default = "testnet";
         description = ''
           environment proxy will connect to
@@ -51,6 +63,14 @@ in {
         default = envConfig.pbftThreshold or null;
         description = ''
           PBFT Threshold
+        '';
+      };
+
+      extraOptions = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = ''
+          Extra options.
         '';
       };
 
@@ -89,7 +109,7 @@ in {
 
       topologyFile = mkOption {
         type = types.path;
-        default = mkProxyTopology environments.${cfg.environment}.relays;
+        default = mkProxyTopology envConfig.relays;
       };
 
       logger.configFile = mkOption {
