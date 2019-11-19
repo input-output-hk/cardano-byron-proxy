@@ -100,7 +100,7 @@ extra-deps:
     commit: 018a50b9042c2115c3ec9c9fd5ca5f28737dd29c
 
   - git: https://github.com/avieth/network-transport-tcp
-    commit: 2634e5e32178bb0456d800d133f8664321daa2ef
+    commit: 46f2942423d9ad3c81040565a9e9d5b9e08ddcc4
 
   - git: https://github.com/avieth/network-transport-inmemory
     commit: 5d8ff2b07b9df35cf61329a3d975e2c8cf95c12a

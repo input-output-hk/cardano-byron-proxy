@@ -312,7 +312,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/avieth/network-transport-tcp
-  tag: 2634e5e32178bb0456d800d133f8664321daa2ef
+  tag: 46f2942423d9ad3c81040565a9e9d5b9e08ddcc4
 
 source-repository-package
   type: git
