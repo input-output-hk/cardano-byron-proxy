@@ -157,7 +157,6 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
             (hsPkgs."filepath" or (buildDepError "filepath"))
             (hsPkgs."ouroboros-consensus" or (buildDepError "ouroboros-consensus"))
             (hsPkgs."process-extras" or (buildDepError "process-extras"))
-            (hsPkgs."reflection" or (buildDepError "reflection"))
             ];
           buildable = true;
           };

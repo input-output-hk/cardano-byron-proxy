@@ -17,7 +17,7 @@ import Control.Monad.Trans.Except (runExceptT)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import Data.Functor.Contravariant (Op (..))
 import Data.List (intercalate)
-import qualified Data.Reflection as Reflection (give, given)
+import qualified Data.Reflection as Reflection (given)
 import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -34,7 +34,6 @@ import qualified Cardano.BM.Data.Severity as Monitoring
 import qualified Cardano.Chain.Genesis as Cardano
 import qualified Cardano.Chain.Slotting as Cardano
 import qualified Cardano.Chain.Update as Cardano
-import qualified Cardano.Crypto as Cardano
 
 import qualified Pos.Chain.Block as CSL (genesisBlock0)
 import qualified Pos.Chain.Block as CSL (BlockConfiguration, withBlockConfiguration)
@@ -45,7 +44,6 @@ import qualified Pos.Chain.Genesis as CSL
 import qualified Pos.Chain.Update as CSL
 import qualified Pos.Chain.Ssc as CSL (withSscConfiguration)
 import qualified Pos.Configuration as CSL (NodeConfiguration, withNodeConfiguration)
-import qualified Pos.Crypto as CSL
 
 import qualified Pos.Infra.Network.CLI as CSL (NetworkConfigOpts (..),
                                                externalNetworkAddressOption,
@@ -64,23 +62,23 @@ import qualified Pos.Util.Trace.Named as Trace (LogNamed (..), appendName, named
 import qualified Pos.Util.Trace
 import qualified Pos.Util.Wlog as Wlog
 
-import Ouroboros.Byron.Proxy.Block (Block)
+import Ouroboros.Byron.Proxy.Block (ByronBlock)
 import Ouroboros.Byron.Proxy.Index.Types (Index)
 import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Index (TraceEvent)
 import Ouroboros.Byron.Proxy.Genesis.Convert
 import Ouroboros.Byron.Proxy.Main
 import Ouroboros.Consensus.Block (GetHeader (Header))
 import Ouroboros.Consensus.BlockchainTime (SlotLength (..), SystemStart (..), realBlockchainTime)
-import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
-import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..), protocolSecurityParam)
 import Ouroboros.Consensus.Mempool.API (Mempool)
 import Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import Ouroboros.Consensus.Node (getMempool)
+import Ouroboros.Consensus.Node.ErrorPolicy (consensusErrorPolicy)
 import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..))
 import Ouroboros.Consensus.Node.ProtocolInfo.Byron (PBftSignatureThreshold (..),
            protocolInfoByron)
-import Ouroboros.Network.NodeToNode (IPSubscriptionTarget (..), LocalAddresses (..), withServer, ipSubscriptionWorker)
+import Ouroboros.Network.NodeToNode (IPSubscriptionTarget (..), LocalAddresses (..),
+           withServer, ipSubscriptionWorker, networkErrorPolicy, newPeerStatesVar)
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (withRegistry)
 import Ouroboros.Network.Block (BlockNo (..), Point (..))
@@ -324,15 +322,22 @@ runShelleyServer
   -> IO ()
 runShelleyServer addr _ ctable rversions = do
   addrInfo <- resolveAddress addr
+  peerStatesVar <- newPeerStatesVar
   withServer
     nullTracer
     nullTracer
+    nullTracer
     ctable
+    peerStatesVar
     addrInfo
     Shelley.mkPeer
     (\(DictVersion _) -> acceptEq)
     rversions
+    errorPolicy
     wait
+  where
+    -- TODO: We might need some additional proxy-specific policies
+    errorPolicy = networkErrorPolicy <> consensusErrorPolicy
 
 runShelleyClient
   :: ( )
@@ -344,26 +349,32 @@ runShelleyClient
 runShelleyClient producerAddrs _ ctable iversions = do
   -- Expect AddrInfo, convert to SockAddr, then pass to ipSubscriptionWorker
   sockAddrs <- mapM resolveAddress producerAddrs
+  peerStatesVar <- newPeerStatesVar -- TODO: Ideally should share state with runShelleyServer
   ipSubscriptionWorker
+    nullTracer
     nullTracer
     nullTracer
     nullTracer
     Shelley.mkPeer
     ctable
+    peerStatesVar
     (LocalAddresses
      (Just (Network.SockAddrInet 0 0))
      (Just (Network.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
      Nothing)
     (const Nothing)
+    errorPolicy
     (IPSubscriptionTarget {
          ispIps     = fmap Network.addrAddress sockAddrs
        , ispValency = length sockAddrs
        })
     iversions
+  where
+    -- TODO: We might need some additional proxy-specific policies
+    errorPolicy = networkErrorPolicy <> consensusErrorPolicy
 
 runByron
-  :: ( ByronGiven )
-  => Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
+  :: Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
   -> ByronOptions
   -> CSL.Genesis.Config
   -> CSL.BlockConfiguration
@@ -371,9 +382,9 @@ runByron
   -> CSL.NodeConfiguration
   -> Cardano.EpochSlots
   -> SecurityParam
-  -> Index IO (Header (Block ByronConfig))
-  -> ChainDB IO (Block ByronConfig)
-  -> Mempool IO (Block ByronConfig) TicketNo
+  -> Index IO (Header ByronBlock)
+  -> ChainDB IO ByronBlock
+  -> Mempool IO ByronBlock TicketNo
   -> IO ()
 runByron tracer byronOptions genesisConfig blockConfig updateConfig nodeConfig epochSlots k idx db mempool = do
     let cslTrace = mkCSLTrace tracer
@@ -461,12 +472,6 @@ main = do
           Left confError -> throwIO (userError (show confError))
           Right it       -> pure it
     let epochSlots = Cardano.EpochSlots (fromIntegral (CSL.configEpochSlots oldGenesisConfig))
-        protocolMagic = Cardano.ProtocolMagicId
-          . fromIntegral -- Int32 -> Word32
-          . CSL.unProtocolMagicId
-          . CSL.getProtocolMagicId
-          . CSL.configProtocolMagic
-          $ oldGenesisConfig
         -- Next, set up the database, taking care to seed with the genesis
         -- block if it's empty.
         dbc :: DBConfig
@@ -474,13 +479,12 @@ main = do
           { dbFilePath    = bpoDatabasePath bpo
           , indexFilePath = bpoIndexPath bpo
           }
-    -- Fulfill ByronGiven, and the necessary cardano-sl reflection configurations.
+    -- Fulfill the necessary cardano-sl reflection configurations.
     CSL.withUpdateConfiguration (CSL.ccUpdate yamlConfig) $
       CSL.withSscConfiguration (CSL.ccSsc yamlConfig) $
       CSL.withBlockConfiguration (CSL.ccBlock yamlConfig) $
       CSL.withDlgConfiguration (CSL.ccDlg yamlConfig) $
-      CSL.withNodeConfiguration (CSL.ccNode yamlConfig) $
-      Reflection.give protocolMagic $ Reflection.give epochSlots $ do
+      CSL.withNodeConfiguration (CSL.ccNode yamlConfig) $ do
         -- Trace DB writes in such a way that they appear in EKG.
         -- FIXME surprisingly, contra-tracer doesn't give a way to do this.
         -- It should export
@@ -493,7 +497,7 @@ main = do
         -- This is defined here because we need the reflection instances
         -- for ByronGiven.
         let Tracer doConvertedTrace = Logging.convertTrace trace
-            dbTracer :: Tracer IO (TraceEvent (Block ByronConfig))
+            dbTracer :: Tracer IO (TraceEvent ByronBlock)
             dbTracer = Tracer $ \trEvent -> case trEvent of
               TraceAddBlockEvent (AddedBlockToVolDB point (BlockNo blockno) _) -> case point of
                 Point Origin -> pure ()

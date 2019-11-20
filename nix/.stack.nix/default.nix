@@ -12,6 +12,7 @@
         "splitmix" = (((hackage.splitmix)."0.0.2").revisions).default;
         "tasty-hedgehog" = (((hackage.tasty-hedgehog)."1.0.0.1").revisions).default;
         "time-units" = (((hackage.time-units)."1.0.0").revisions).default;
+        "katip" = (((hackage.katip)."0.8.3.0").revisions).default;
         "Win32" = (((hackage.Win32)."2.5.4.1").revisions).default;
         "aeson-options" = (((hackage.aeson-options)."0.1.0").revisions).default;
         "pvss" = (((hackage.pvss)."0.2.0").revisions).default;
@@ -36,9 +37,7 @@
         cardano-binary-test = ./cardano-binary-test.nix;
         cardano-crypto-class = ./cardano-crypto-class.nix;
         cardano-ledger = ./cardano-ledger.nix;
-        cardano-ledger-test = ./cardano-ledger-test.nix;
         cardano-crypto-wrapper = ./cardano-crypto-wrapper.nix;
-        cardano-crypto-test = ./cardano-crypto-test.nix;
         cardano-prelude = ./cardano-prelude.nix;
         cardano-prelude-test = ./cardano-prelude-test.nix;
         cardano-shell = ./cardano-shell.nix;

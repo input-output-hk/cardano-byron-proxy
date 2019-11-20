@@ -146,8 +146,7 @@ executable cddl-test
                        contra-tracer,
                        filepath,
                        ouroboros-consensus,
-                       process-extras,
-                       reflection
+                       process-extras
   ghc-options:         -threaded
                        -Wall
                        -Wcompat

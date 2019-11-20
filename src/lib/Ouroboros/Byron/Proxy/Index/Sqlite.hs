@@ -33,10 +33,12 @@ import Ouroboros.Network.Block (SlotNo (..))
 import Ouroboros.Network.Point (WithOrigin (..), blockPointHash, blockPointSlot)
 import qualified Ouroboros.Network.Point as Point (Block (..))
 
-import Ouroboros.Consensus.Ledger.Byron (ByronHash(..))
+import Ouroboros.Consensus.Ledger.Byron (ByronHash(..),
+         byronHeaderSlotNo, byronHeaderRaw)
+import Ouroboros.Consensus.Ledger.Byron.Aux as Cardano
 
-import Ouroboros.Byron.Proxy.Block (Block, Header, pattern ByronHeaderRegular,
-         pattern ByronHeaderBoundary, headerHash)
+import Ouroboros.Byron.Proxy.Block (ByronBlock(..), Header,
+         headerHash)
 import Ouroboros.Byron.Proxy.Index.Types (Index (..))
 import qualified Ouroboros.Byron.Proxy.Index.Types as Index
 
@@ -51,7 +53,7 @@ index
   -> Tracer IO TraceEvent
   -> Connection
   -> Sql.Statement -- for insert
-  -> Index IO (Header (Block cfg))
+  -> Index IO (Header ByronBlock)
 index epochSlots tracer conn insertStatement = Index
   { Index.lookup = sqliteLookup epochSlots conn
   , tip          = sqliteTip epochSlots conn
@@ -76,7 +78,7 @@ withIndex
   -> Tracer IO TraceEvent
   -> OpenDB
   -> FilePath
-  -> (Index IO (Header (Block cfg)) -> IO t)
+  -> (Index IO (Header ByronBlock) -> IO t)
   -> IO t
 withIndex epochSlots tracer o fp k = Sql.withConnection fp $ \conn -> do
   case o of
@@ -99,7 +101,7 @@ withIndexAuto
   :: EpochSlots
   -> Tracer IO TraceEvent
   -> FilePath
-  -> (Index IO (Header (Block cfg)) -> IO t)
+  -> (Index IO (Header ByronBlock) -> IO t)
   -> IO t
 withIndexAuto epochSlots tracer fp k = doesFileExist fp >>= \b -> case b of
   True  -> withIndex epochSlots tracer Existing fp k
@@ -210,7 +212,7 @@ sqliteRollforward
   :: EpochSlots
   -> Tracer IO TraceEvent
   -> Sql.Statement -- the insert prepared statement
-  -> Header (Block cfg)
+  -> Header ByronBlock
   -> IO ()
 sqliteRollforward epochSlots tracer insertStatement hdr = do
   traceWith tracer (Rollforward point)
@@ -236,14 +238,12 @@ sqliteRollforward epochSlots tracer insertStatement hdr = do
   hashBytes = convert digest
 
   slotNo :: SlotNo
-  slotNo = case hdr of
-    ByronHeaderBoundary bvd  _ -> SlotNo $ Cardano.boundaryEpoch bvd * unEpochSlots epochSlots
-    ByronHeaderRegular  hdr' _ -> SlotNo $ unSlotNumber (Binary.unAnnotated (Cardano.aHeaderSlot hdr'))
+  slotNo = byronHeaderSlotNo hdr
 
   epoch, slot :: Int
-  (epoch, slot) = case hdr of
-    ByronHeaderBoundary bvd  _ -> (fromIntegral (Cardano.boundaryEpoch bvd), -1)
-    ByronHeaderRegular  hdr' _ ->
+  (epoch, slot) = case byronHeaderRaw hdr of
+    Cardano.ABOBBoundaryHdr bvd  -> (fromIntegral (Cardano.boundaryEpoch bvd), -1)
+    Cardano.ABOBBlockHdr    hdr' ->
       fromIntegral (unSlotNumber (Binary.unAnnotated (Cardano.aHeaderSlot hdr')))
       `quotRem`
       fromIntegral (unEpochSlots epochSlots)

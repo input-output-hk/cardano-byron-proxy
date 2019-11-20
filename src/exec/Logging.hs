@@ -2,17 +2,15 @@
 
 module Logging where
 
-import Control.Concurrent (myThreadId)
 import Control.Tracer (Tracer (..))
 import Data.Functor.Contravariant (contramap)
-import Data.Text (Text, pack)
+import Data.Text (Text)
 import qualified Data.Text.Lazy as Text (toStrict)
 import qualified Data.Text.Lazy.Builder as Text
-import Data.Time.Clock.POSIX (getCurrentTime)
 
 import qualified Cardano.BM.Configuration.Model as Monitoring (setupFromRepresentation)
 import qualified Cardano.BM.Data.BackendKind as Monitoring
-import qualified Cardano.BM.Data.Configuration as Monitoring (Representation (..), parseRepresentation)
+import qualified Cardano.BM.Data.Configuration as Monitoring
 import qualified Cardano.BM.Data.LogItem as Monitoring
 import qualified Cardano.BM.Data.Output as Monitoring
 import qualified Cardano.BM.Data.Severity as Monitoring
@@ -30,7 +28,7 @@ withLogging mLoggerConfig name k = do
   -- default.
   loggerConfig <- case mLoggerConfig of
     Nothing -> pure defaultLoggerConfig
-    Just fp -> Monitoring.parseRepresentation fp
+    Just fp -> Monitoring.readRepresentation fp
   -- iohk-monitoring uses some MVar for configuration, which corresponds to
   -- the "Representation" which we call config.
   loggerConfig' <- Monitoring.setupFromRepresentation loggerConfig
@@ -47,16 +45,9 @@ convertTrace
   -> Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Monitoring.LOContent a)
 convertTrace trace = case trace of
   Tracer f -> Tracer $ \(name, sev, content) -> do
-    tid <- pack . show <$> myThreadId
-    now <- getCurrentTime
-    let logMeta    = Monitoring.LOMeta
-                       { Monitoring.tstamp = now
-                       , Monitoring.tid = tid
-                       , Monitoring.severity = sev
-                       , Monitoring.privacy = Monitoring.Public
-                       }
-        logContent = content
-        logObject  = Monitoring.LogObject name logMeta logContent
+    logMeta <- Monitoring.mkLOMeta sev Monitoring.Public
+    let logContent = content
+        logObject  = Monitoring.LogObject [name] logMeta logContent
     f logObject
 
 convertTrace'
