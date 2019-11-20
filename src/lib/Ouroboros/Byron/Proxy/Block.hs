@@ -33,6 +33,7 @@ import Cardano.Crypto.Hashing (AbstractHash (..))
 import qualified Ouroboros.Consensus.Block as Consensus (GetHeader (..))
 import Ouroboros.Consensus.Ledger.Byron (ByronBlock (..), ByronHash (..),
          encodeByronBlock, byronHeaderHash)
+import Ouroboros.Storage.Common (EpochNo(..))
 
 -- For type instance HeaderHash (Header blk) = HeaderHash blk
 -- Anyone who imports this module will almost certainly want that instance.
@@ -57,9 +58,13 @@ coerceHashFromLegacy (Legacy.AbstractHash digest) = ByronHash $ AbstractHash dig
 headerHash :: Consensus.Header ByronBlock -> Cardano.HeaderHash
 headerHash = unByronHash . byronHeaderHash
 
--- | Gives `Just` with the block's header's hash, whenever it's an epoch
--- boundary block.
-isEBB :: ByronBlock -> Maybe ByronHash
+-- | Return @Just@ the epoch number if the block is an EBB, @Nothing@ for
+-- regular blocks
+isEBB :: ByronBlock -> Maybe EpochNo
 isEBB blk = case byronBlockRaw blk of
-  Cardano.ABOBBlock    _ -> Nothing
-  Cardano.ABOBBoundary _ -> Just $ byronBlockHash blk
+    Cardano.ABOBBlock _      -> Nothing
+    Cardano.ABOBBoundary ebb -> Just
+                              . EpochNo
+                              . Cardano.boundaryEpoch
+                              . Cardano.boundaryHeader
+                              $ ebb

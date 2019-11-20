@@ -39,7 +39,7 @@ extra-deps:
     commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: f5ccf21a81021b5ccc2e581591ccc48725812337
+    commit: babf1a855e6bc745321b2516837f5cac174b6943
     subdirs:
       - ouroboros-consensus
       - ouroboros-network
