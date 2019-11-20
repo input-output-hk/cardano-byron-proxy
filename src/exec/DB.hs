@@ -22,7 +22,7 @@ import           Ouroboros.Byron.Proxy.Index.Types         (Index)
 import           Ouroboros.Consensus.Block                 (BlockProtocol,
                                                             GetHeader (Header))
 import qualified Ouroboros.Consensus.Ledger.Byron          as Byron
-import           Ouroboros.Consensus.Ledger.Byron.Config   (pbftEpochSlots)                                                            
+import           Ouroboros.Consensus.Ledger.Byron.Config   (pbftEpochSlots)
 import           Ouroboros.Consensus.Ledger.Extended       (ExtLedgerState)
 import           Ouroboros.Consensus.Protocol              (NodeConfig,
                                                             pbftExtConfig)
@@ -93,9 +93,10 @@ withDB dbOptions dbTracer indexTracer rr nodeConfig extLedgerState k = do
       chainDBArgs = ChainDB.ChainDbArgs
         { cdbDecodeHash = Byron.decodeByronHeaderHash
         , cdbEncodeHash = Byron.encodeByronHeaderHash
+        , cdbHashInfo   = Byron.byronHashInfo
 
         , cdbDecodeBlock = Byron.decodeByronBlock epochSlots
-        , cdbEncodeBlock = Byron.encodeByronBlock
+        , cdbEncodeBlock = Byron.encodeByronBlockWithInfo
 
         , cdbDecodeLedger = Byron.decodeByronLedgerState
         , cdbEncodeLedger = Byron.encodeByronLedgerState

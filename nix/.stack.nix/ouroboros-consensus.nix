@@ -66,6 +66,7 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
           (hsPkgs."contra-tracer" or (buildDepError "contra-tracer"))
           (hsPkgs."bifunctors" or (buildDepError "bifunctors"))
           (hsPkgs."bimap" or (buildDepError "bimap"))
+          (hsPkgs."binary" or (buildDepError "binary"))
           (hsPkgs."bytestring" or (buildDepError "bytestring"))
           (hsPkgs."cardano-binary" or (buildDepError "cardano-binary"))
           (hsPkgs."cardano-crypto-class" or (buildDepError "cardano-crypto-class"))
@@ -76,14 +77,15 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
           (hsPkgs."containers" or (buildDepError "containers"))
           (hsPkgs."cryptonite" or (buildDepError "cryptonite"))
           (hsPkgs."deepseq" or (buildDepError "deepseq"))
+          (hsPkgs."digest" or (buildDepError "digest"))
           (hsPkgs."directory" or (buildDepError "directory"))
           (hsPkgs."filepath" or (buildDepError "filepath"))
           (hsPkgs."fingertree" or (buildDepError "fingertree"))
           (hsPkgs."formatting" or (buildDepError "formatting"))
+          (hsPkgs."memory" or (buildDepError "memory"))
           (hsPkgs."mmorph" or (buildDepError "mmorph"))
           (hsPkgs."mtl" or (buildDepError "mtl"))
           (hsPkgs."network" or (buildDepError "network"))
-          (hsPkgs."pipes" or (buildDepError "pipes"))
           (hsPkgs."serialise" or (buildDepError "serialise"))
           (hsPkgs."stm" or (buildDepError "stm"))
           (hsPkgs."text" or (buildDepError "text"))
@@ -141,6 +143,7 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
           depends = [
             (hsPkgs."base" or (buildDepError "base"))
             (hsPkgs."base16-bytestring" or (buildDepError "base16-bytestring"))
+            (hsPkgs."binary" or (buildDepError "binary"))
             (hsPkgs."bytestring" or (buildDepError "bytestring"))
             (hsPkgs."cardano-binary" or (buildDepError "cardano-binary"))
             (hsPkgs."cardano-crypto-class" or (buildDepError "cardano-crypto-class"))
@@ -226,8 +229,8 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/ouroboros-network";
-      rev = "f5ccf21a81021b5ccc2e581591ccc48725812337";
-      sha256 = "02k5hb0mdlsk5c4dsc7hhyj2p1nvghifcrbka9rkd2bwmpb0favc";
+      rev = "babf1a855e6bc745321b2516837f5cac174b6943";
+      sha256 = "1vsrb3c9y9s5b3i1pqmv2m2ifs6wlcksn8nxpcfxvcgcmnvscz01";
       });
     postUnpack = "sourceRoot+=/ouroboros-consensus; echo source root reset to \$sourceRoot";
     }

@@ -24,7 +24,6 @@ import           Control.Tracer (nullTracer)
 import qualified Cardano.Crypto as Cardano (ProtocolMagicId)
 import qualified Cardano.Chain.Slotting as Cardano (EpochSlots (..))
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
-         (decodeByronHeaderHash, encodeByronHeaderHash, encodeByronBlock, decodeByronBlock )
 import           Ouroboros.Byron.Proxy.Block (ByronBlock, isEBB)
 
 import           Ouroboros.Storage.Common (EpochSize (..),EpochNo(..))
@@ -96,7 +95,8 @@ dbArgs fp = do
       immDecodeHash  = Byron.decodeByronHeaderHash
     , immDecodeBlock = Byron.decodeByronBlock epochSlots
     , immEncodeHash  = Byron.encodeByronHeaderHash
-    , immEncodeBlock = Byron.encodeByronBlock
+    , immEncodeBlock = Byron.encodeByronBlockWithInfo
+    , immHashInfo    = Byron.byronHashInfo
     , immErr         = EH.exceptions
     , immEpochInfo   = epochInfo
     , immValidation  = ValidateMostRecentEpoch
