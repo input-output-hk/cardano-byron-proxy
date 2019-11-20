@@ -12,11 +12,8 @@ Description : Some block-related definitions.
 -}
 
 module Ouroboros.Byron.Proxy.Block
-  ( Block
-  , ByronBlockOrEBB (..)
+  ( ByronBlock (..)
   , Consensus.Header
-  , pattern ByronHeaderRegular
-  , pattern ByronHeaderBoundary
   , toSerializedBlock
   , coerceHashFromLegacy
   , coerceHashToLegacy
@@ -34,21 +31,16 @@ import qualified Cardano.Chain.Block as Cardano
 import Cardano.Crypto.Hashing (AbstractHash (..))
 
 import qualified Ouroboros.Consensus.Block as Consensus (GetHeader (..))
-import Ouroboros.Consensus.Ledger.Byron (ByronBlockOrEBB (..), ByronHash(..),
-         pattern ByronHeaderRegular, pattern ByronHeaderBoundary,
-         encodeByronBlock)
+import Ouroboros.Consensus.Ledger.Byron (ByronBlock (..), ByronHash (..),
+         encodeByronBlock, byronHeaderHash)
 
 -- For type instance HeaderHash (Header blk) = HeaderHash blk
 -- Anyone who imports this module will almost certainly want that instance.
 import Ouroboros.Consensus.Block ()
 
--- | The block type, mutually understandable between Byron and Shelley programs.
--- Suitable for storage in ChainDB and transport over the block fetch protocol.
-type Block cfg = ByronBlockOrEBB cfg
-
 -- | Part of the Byron Logic layer interface requires making a serialized block,
 -- which is just the block's encoding.
-toSerializedBlock :: Block cfg -> SerializedBlock
+toSerializedBlock :: ByronBlock -> SerializedBlock
 toSerializedBlock = Serialized . CBOR.toStrictByteString . encodeByronBlock
 
 -- | Convert from a new header hash to a legacy header hash. They are
@@ -62,14 +54,12 @@ coerceHashFromLegacy :: CSL.HeaderHash -> ByronHash
 coerceHashFromLegacy (Legacy.AbstractHash digest) = ByronHash $ AbstractHash digest
 
 -- | Same a `blockHash` but doesn't need `ByronGiven`.
-headerHash :: Consensus.Header (Block cfg) -> Cardano.HeaderHash
-headerHash hdr = case hdr of
-  ByronHeaderRegular  _ byronHash -> unByronHash byronHash
-  ByronHeaderBoundary _ byronHash -> unByronHash byronHash
+headerHash :: Consensus.Header ByronBlock -> Cardano.HeaderHash
+headerHash = unByronHash . byronHeaderHash
 
 -- | Gives `Just` with the block's header's hash, whenever it's an epoch
 -- boundary block.
-isEBB :: Block cfg -> Maybe ByronHash
-isEBB blk = case unByronBlockOrEBB blk of
+isEBB :: ByronBlock -> Maybe ByronHash
+isEBB blk = case byronBlockRaw blk of
   Cardano.ABOBBlock    _ -> Nothing
-  Cardano.ABOBBoundary _ -> Just $ ByronHash $ headerHash (Consensus.getHeader blk)
+  Cardano.ABOBBoundary _ -> Just $ byronBlockHash blk

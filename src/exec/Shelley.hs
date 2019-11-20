@@ -16,11 +16,9 @@ import qualified Network.Socket as Socket
 
 import Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF(..), Proxy(..))
 
-import Ouroboros.Byron.Proxy.Block (Block)
+import Ouroboros.Byron.Proxy.Block (ByronBlock)
 import Ouroboros.Consensus.Block (BlockProtocol)
 import Ouroboros.Consensus.Protocol (NodeConfig, NodeState)
-import Ouroboros.Consensus.Ledger.Byron (ByronGiven)
-import Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
 import Ouroboros.Consensus.Mempool.Impl (MempoolCapacity (..))
 import Ouroboros.Consensus.Util.Condense (Condense (..))
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
@@ -55,13 +53,12 @@ type ResponderVersions = Versions NodeToNodeVersion DictVersion (OuroborosApplic
 
 -- Must have `ByronGiven` because of the constraints on `nodeKernel`
 withShelley
-  :: ( ByronGiven )
-  => ResourceRegistry IO
-  -> ChainDB IO (Block ByronConfig)
-  -> NodeConfig (BlockProtocol (Block ByronConfig))
-  -> NodeState (BlockProtocol (Block ByronConfig))
+  :: ResourceRegistry IO
+  -> ChainDB IO ByronBlock
+  -> NodeConfig (BlockProtocol ByronBlock)
+  -> NodeState (BlockProtocol ByronBlock)
   -> BlockchainTime IO
-  -> (NodeKernel IO Peer (Block ByronConfig) -> ConnectionTable IO Socket.SockAddr -> InitiatorVersions -> ResponderVersions -> IO t)
+  -> (NodeKernel IO Peer ByronBlock -> ConnectionTable IO Socket.SockAddr -> InitiatorVersions -> ResponderVersions -> IO t)
   -> IO t
 withShelley rr cdb conf state blockchainTime k = do
   ctable <- newConnectionTable
@@ -76,19 +73,17 @@ withShelley rr cdb conf state blockchainTime k = do
   k kernel ctable (initiatorNetworkApplication <$> vs) (responderNetworkApplication <$> vs)
 
 versions
-  :: ( ByronGiven )
-  => NodeConfig (BlockProtocol (Block ByronConfig)) -> NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
+  :: NodeConfig (BlockProtocol ByronBlock) -> NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
   -> Versions NodeToNodeVersion DictVersion (NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ())
-versions conf = simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData (nodeNetworkMagic (Proxy @(Block ByronConfig)) conf)) (DictVersion nodeToNodeCodecCBORTerm)
+versions conf = simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData (nodeNetworkMagic (Proxy @ByronBlock) conf)) (DictVersion nodeToNodeCodecCBORTerm)
 
 mkParams
-  :: ( ByronGiven )
-  => ResourceRegistry IO
-  -> ChainDB IO (Block ByronConfig)
-  -> NodeConfig (BlockProtocol (Block ByronConfig))
-  -> NodeState (BlockProtocol (Block ByronConfig))
+  :: ResourceRegistry IO
+  -> ChainDB IO ByronBlock
+  -> NodeConfig (BlockProtocol ByronBlock)
+  -> NodeState (BlockProtocol ByronBlock)
   -> BlockchainTime IO
-  -> NodeArgs IO Peer (Block ByronConfig)
+  -> NodeArgs IO Peer ByronBlock
 mkParams rr cdb nconf nstate blockchainTime = NodeArgs
   { tracers = nullTracers
   , registry = rr

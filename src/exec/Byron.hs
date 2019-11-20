@@ -22,7 +22,6 @@ import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (mapMaybe)
 import qualified Data.Text.Lazy.Builder as Text
-import Data.Typeable (Typeable)
 import Data.Word (Word64)
 import System.Random (StdGen, getStdGen, randomR)
 
@@ -35,12 +34,13 @@ import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), GenesisBlock,
                                          MainBlockHeader, HeaderHash, headerHash)
 import qualified Pos.Infra.Diffusion.Types as CSL
 
-import Ouroboros.Byron.Proxy.Block (Block, ByronBlockOrEBB (..),
-         pattern ByronHeaderRegular, pattern ByronHeaderBoundary,
+import Ouroboros.Byron.Proxy.Block (ByronBlock,
          coerceHashToLegacy, headerHash)
 import Ouroboros.Byron.Proxy.Main
 import Ouroboros.Consensus.Block (Header)
-import Ouroboros.Consensus.Ledger.Byron (ByronGiven, ByronHash(..))
+import Ouroboros.Consensus.Ledger.Byron (ByronHash(..),
+         byronHeaderRaw, mkByronBlock)
+import Ouroboros.Consensus.Ledger.Byron.Aux as Cardano
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (maxRollbacks))
 import Ouroboros.Network.Block (ChainHash (..), Point, pointHash)
 import qualified Ouroboros.Network.AnchoredFragment as AF
@@ -55,16 +55,15 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 -- The ByronGiven and Typeable constraints are needed in order to use
 -- AF.selectPoints, that's all.
 download
-  :: forall cfg void .
-     ( ByronGiven, Typeable cfg )
-  => Tracer IO Text.Builder
+  :: forall void .
+     Tracer IO Text.Builder
   -> CSL.GenesisBlock -- ^ For use as checkpoint when DB is empty. Also will
                       -- be put into an empty DB.
                       -- Sadly, old Byron net API doesn't give any meaning to an
                       -- empty checkpoint set; it'll just fall over.
   -> Cardano.EpochSlots
   -> SecurityParam
-  -> ChainDB IO (Block cfg)
+  -> ChainDB IO ByronBlock
   -> ByronProxy
   -> IO void
 download tracer genesisBlock epochSlots securityParam db bp = do
@@ -73,7 +72,7 @@ download tracer genesisBlock epochSlots securityParam db bp = do
     tipHash <- case mTip of
       Nothing -> do
         traceWith tracer "Seeding database with genesis"
-        genesisBlock' :: Block cfg <- recodeBlockOrFail epochSlots throwIO (Left genesisBlock)
+        genesisBlock' :: ByronBlock <- recodeBlockOrFail epochSlots throwIO (Left genesisBlock)
         ChainDB.addBlock db genesisBlock'
         pure $ CSL.headerHash genesisBlock
       Just header -> pure $ coerceHashToLegacy (headerHash header)
@@ -135,11 +134,11 @@ download tracer genesisBlock epochSlots securityParam db bp = do
     mainLoop rndGen' tipHash'
 
   checkpoints
-    :: AF.AnchoredFragment (Header (Block cfg))
+    :: AF.AnchoredFragment (Header ByronBlock)
     -> [CSL.HeaderHash]
   checkpoints = mapMaybe pointToHash . AF.selectPoints (fmap fromIntegral offsets)
 
-  pointToHash :: Point (Header (Block cfg)) -> Maybe CSL.HeaderHash
+  pointToHash :: Point (Header ByronBlock) -> Maybe CSL.HeaderHash
   pointToHash pnt = case pointHash pnt of
     GenesisHash                -> Nothing
     BlockHash (ByronHash hash) -> Just $ coerceHashToLegacy hash
@@ -196,15 +195,15 @@ recodeBlockOrFail
   :: Cardano.EpochSlots
   -> (forall x . Binary.DecoderError -> IO x)
   -> CSL.Block
-  -> IO (Block cfg)
+  -> IO ByronBlock
 recodeBlockOrFail epochSlots onErr = either onErr pure . recodeBlock epochSlots
 
 recodeBlock
   :: Cardano.EpochSlots
   -> CSL.Block
-  -> Either Binary.DecoderError (Block cfg)
+  -> Either Binary.DecoderError ByronBlock
 recodeBlock epochSlots cslBlk = case Binary.decodeFullAnnotatedBytes "Block" decoder cslBytes of
-  Right blk -> Right $ ByronBlockOrEBB blk
+  Right blk -> Right $ mkByronBlock epochSlots blk
   Left  err -> Left  $ err
   where
   cslBytes = CSL.serialize cslBlk
@@ -221,9 +220,8 @@ recodeBlock epochSlots cslBlk = case Binary.decodeFullAnnotatedBytes "Block" dec
 -- a continuation of the current chain.
 -- Do we wish to / need to stick to that style?
 announce
-  :: ( ByronGiven, Typeable cfg ) -- Needed for HasHeader instance.
-  => Maybe Cardano.HeaderHash -- ^ Of block most recently announced.
-  -> ChainDB IO (Block cfg)
+  :: Maybe Cardano.HeaderHash -- ^ Of block most recently announced.
+  -> ChainDB IO ByronBlock
   -> ByronProxy
   -> IO x
 announce mHashOfLast db bp = do
@@ -246,14 +244,14 @@ announce mHashOfLast db bp = do
     case CF.head fragment of
       Nothing      -> pure False
       Just header' -> pure (headerHash header' == hash)
-  when shouldAnnounce $ case tipHeader of
+  when shouldAnnounce $ case byronHeaderRaw tipHeader of
     -- Must decode the legacy header from the cardano-ledger header.
     -- TODO alternatively, the type of `ByronProxy.announceChain` could change
     -- to accept a `Header Block`, and it could deal with the recoding. Probably
     -- better that way
-    ByronHeaderRegular  hdr _ -> case CSL.decodeFull (Lazy.fromStrict (Cardano.headerAnnotation hdr)) of
+    Cardano.ABOBBlockHdr hdr -> case CSL.decodeFull (Lazy.fromStrict (Cardano.headerAnnotation hdr)) of
       Left  _ -> error "announce: could not decode main header"
       Right (hdr' :: CSL.MainBlockHeader) -> announceChain bp hdr'
     -- We do not announce EBBs.
-    ByronHeaderBoundary  _  _ -> pure ()
+    Cardano.ABOBBoundaryHdr _ -> pure ()
   announce (Just hash) db bp

@@ -117,7 +117,8 @@ import           Pos.Util.Trace                            (Trace)
 import           Pos.Util.Trace.Named                      (LogNamed)
 import qualified Pos.Util.Wlog                             as Wlog (Severity)
 
-import           Ouroboros.Byron.Proxy.Block               (Block, Header,
+import           Ouroboros.Byron.Proxy.Block               (ByronBlock,
+                                                            Header,
                                                             coerceHashFromLegacy,
                                                             coerceHashToLegacy,
                                                             headerHash,
@@ -128,8 +129,8 @@ import           Ouroboros.Byron.Proxy.Genesis.Convert     (convertEpochSlots)
 import           Ouroboros.Consensus.Block                 (getHeader)
 import           Ouroboros.Consensus.Ledger.Byron          (GenTx(ByronTx),
                                                             encodeByronBlock,
-                                                            mkByronGenTx)
-import           Ouroboros.Consensus.Mempool.API           (ApplyTx, GenTxId,
+                                                            fromMempoolPayload)
+import           Ouroboros.Consensus.Mempool.API           (GenTxId,
                                                             Mempool)
 import qualified Ouroboros.Consensus.Mempool.API           as Mempool
 import           Ouroboros.Consensus.Mempool.TxSeq         (TicketNo)
@@ -250,9 +251,7 @@ taggedKeyValNoOp ptag keyFromValue = KeyVal
 -- of the mempool, which works on monotonically-increasing ticket numbers and
 -- has no index based on hash (which Byron requires).
 txKeyValFromMempool
-  :: forall cfg .
-     ( ApplyTx (Block cfg) )
-  => Mempool IO (Block cfg) TicketNo
+  :: Mempool IO ByronBlock TicketNo
   -> TVar (Map TxId TicketNo)
   -> KeyVal (Tagged TxMsgContents TxId) TxMsgContents IO
 txKeyValFromMempool mempool txTicketMapVar = KeyVal
@@ -279,9 +278,9 @@ txKeyValFromMempool mempool txTicketMapVar = KeyVal
     ptag = Proxy
     keyFromValue :: TxMsgContents -> TxId
     keyFromValue = hash . taTx . getTxMsgContents
-    reader :: Tx.Out.TxSubmissionMempoolReader (GenTxId (Block cfg)) (GenTx (Block cfg)) TicketNo IO
+    reader :: Tx.Out.TxSubmissionMempoolReader (GenTxId ByronBlock) (GenTx ByronBlock) TicketNo IO
     reader = getMempoolReader mempool
-    writer :: Tx.In.TxSubmissionMempoolWriter (GenTxId (Block cfg)) (GenTx (Block cfg)) TicketNo IO
+    writer :: Tx.In.TxSubmissionMempoolWriter (GenTxId ByronBlock) (GenTx ByronBlock) TicketNo IO
     writer = getMempoolWriter mempool
     lookupTx :: Tagged TxMsgContents TxId -> IO (Maybe TxMsgContents)
     lookupTx = \txId -> atomically $ do
@@ -302,7 +301,7 @@ txKeyValFromMempool mempool txTicketMapVar = KeyVal
 -- It's also possible that the transactions sent by this were actually received
 -- from Byron, and relayed by the Byron inv/req/data system. That's also ok:
 -- if a peer already has it, it won't ask for it (it will ignore the inv).
-sendTxsFromMempool :: Mempool IO (Block cfg) TicketNo -> Diffusion IO -> IO x
+sendTxsFromMempool :: Mempool IO ByronBlock TicketNo -> Diffusion IO -> IO x
 sendTxsFromMempool mempool diff = go (Mempool.zeroIdx mempool)
   where
     go ticketNo = do
@@ -329,8 +328,8 @@ sendTxsFromMempool mempool diff = go (Mempool.zeroIdx mempool)
 -- | Keep a map from Byron transaction ids to ticket numbers in sync with the
 -- mempool. Of course there could be some lag depending on the scheduler.
 updateMempoolIdMap
-  :: forall cfg void .
-     Mempool IO (Block cfg) TicketNo
+  :: forall void .
+     Mempool IO ByronBlock TicketNo
   -> TVar (Map TxId TicketNo)
   -> IO void
 updateMempoolIdMap mempool tvar = go [] (Mempool.zeroIdx mempool)
@@ -339,10 +338,10 @@ updateMempoolIdMap mempool tvar = go [] (Mempool.zeroIdx mempool)
       snapshot <- Mempool.getSnapshot mempool
       let txs = Mempool.snapshotTxs snapshot
           -- The prefix of the current list not in the new list is the removals.
-          removals :: [(GenTx (Block cfg), TicketNo)]
+          removals :: [(GenTx ByronBlock, TicketNo)]
           removals = takeUntilMatch currentTxs txs
           -- Additions are found by using the current ticket number
-          additions :: [(GenTx (Block cfg), TicketNo)]
+          additions :: [(GenTx ByronBlock, TicketNo)]
           additions = Mempool.snapshotTxsAfter snapshot ticketNo
       -- Retry if there is no change.
       check (not (null removals && null additions))
@@ -370,7 +369,7 @@ updateMempoolIdMap mempool tvar = go [] (Mempool.zeroIdx mempool)
 
 -- | The ouroboros-consensus transaction type includes update proposals, votes,
 -- and delegation certificates. We are interested only in money transactions.
-pickMoneyTransaction :: GenTx (Block cfg) -> Maybe (Cardano.TxId, Cardano.ATxAux ByteString)
+pickMoneyTransaction :: GenTx ByronBlock -> Maybe (Cardano.TxId, Cardano.ATxAux ByteString)
 pickMoneyTransaction gtx = case gtx of
   ByronTx txid txaux -> Just (txid, txaux)
   _                  -> Nothing
@@ -378,7 +377,7 @@ pickMoneyTransaction gtx = case gtx of
 -- | Useful when filtering out mempool entries that come with ticket numbers
 -- in the second component.
 pickMoneyTransactions
-  :: [(GenTx (Block cfg), t)]
+  :: [(GenTx ByronBlock, t)]
   -> [((Cardano.TxId, Cardano.ATxAux ByteString), t)]
 pickMoneyTransactions = mapMaybe $ \(gtx, t) ->
   fmap (flip (,) t) (pickMoneyTransaction gtx)
@@ -389,10 +388,10 @@ toByronTxId (Cardano.AbstractHash txId) = CSL.AbstractHash txId
 toByronTxMsgContents :: Cardano.ATxAux ByteString -> TxMsgContents
 toByronTxMsgContents = TxMsgContents . toByronTxAux
 
-fromByronTxMsgContents :: TxMsgContents -> GenTx (Block cfg)
+fromByronTxMsgContents :: TxMsgContents -> GenTx ByronBlock
 fromByronTxMsgContents (TxMsgContents txAux) = fromByronTxAux txAux
 
--- | The `GenTx (Block cfg)` contains a `Cardano.TxAux` with `ByteString`
+-- | The `GenTx ByronBlock` contains a `Cardano.TxAux` with `ByteString`
 -- annotation. Conversion proceeds by decoding a Byron `TxAux` from that.
 -- It's basically an assertion failure if the decoding fails. It means our
 -- codec must be wrong.
@@ -405,11 +404,11 @@ toByronTxAux txaux = case (decodedTx, decodedWitness) of
     decodedTx      = CSL.decodeFull' (Binary.annotation (Cardano.aTaTx txaux))
     decodedWitness = CSL.decodeFull' (Binary.annotation (Cardano.aTaWitness txaux))
 
--- | In order to get a `GenTx (Block cfg)`, we need `ByteString` annotations on
+-- | In order to get a `GenTx ByronBlock`, we need `ByteString` annotations on
 -- its parts. Only way to get that is to encode parts of the transaction.
-fromByronTxAux :: TxAux -> GenTx (Block cfg)
+fromByronTxAux :: TxAux -> GenTx ByronBlock
 fromByronTxAux txAux = case Binary.decodeFullAnnotatedBytes "TxAux" decoder cslBytes of
-    Right txAux' -> mkByronGenTx (MempoolTx txAux')
+    Right txAux' -> fromMempoolPayload (MempoolTx txAux')
     Left  err    -> error $ "fromByronTxAux: TxAux codec inconsistent " ++ show err
   where
     cslBytes = CSL.serialize txAux
@@ -474,13 +473,13 @@ updateBestTipMaybe peer header = maybe bt (updateBestTip peer header)
 -- `ChainDB` presents one, we'll just end the conduit.
 bbsStreamBlocks
   :: ResourceRegistry IO
-  -> Index IO (Header (Block cfg))
-  -> ChainDB IO (Block cfg)
+  -> Index IO (Header ByronBlock)
+  -> ChainDB IO ByronBlock
   -> (forall a . Text -> IO a)
   -- ^ If decoding fails.
   -> Byron.Legacy.HeaderHash
-  -> (Block cfg -> IO s) -- ^ Run on every block. Allows to re-use this definition
-                         -- to stream SerializedBlock or Byron.Legacy.Block.
+  -> (ByronBlock -> IO s) -- ^ Run on every block. Allows to re-use this definition
+                          -- to stream SerializedBlock or Byron.Legacy.Block.
   -> Bool -- ^ Set True to yield the block at the start hash.
   -> (ConduitT () s IO () -> IO t)
   -> IO t
@@ -528,8 +527,8 @@ bbsStreamBlocks rr idx db _ hh f yieldFirst k = do
 
 bbsGetSerializedBlock
   :: EpochSlots
-  -> Index IO (Header (Block cfg))
-  -> ChainDB IO (Block cfg)
+  -> Index IO (Header ByronBlock)
+  -> ChainDB IO ByronBlock
   -> Byron.Legacy.HeaderHash
   -> IO (Maybe SerializedBlock)
 bbsGetSerializedBlock _ idx db hh = do
@@ -542,8 +541,8 @@ bbsGetSerializedBlock _ idx db hh = do
 
 bbsGetBlockHeader
   :: EpochSlots
-  -> Index IO (Header (Block cfg))
-  -> ChainDB IO (Block cfg)
+  -> Index IO (Header ByronBlock)
+  -> ChainDB IO ByronBlock
   -> (forall a . Text -> IO a)
   -> Byron.Legacy.HeaderHash
   -> IO (Maybe Byron.Legacy.BlockHeader)
@@ -575,8 +574,8 @@ bbsGetBlockHeader _ idx db onErr hh = do
 -- The resulting list includes both endpoints.
 bbsGetHashesRange
   :: ResourceRegistry IO
-  -> Index IO (Header (Block cfg))
-  -> ChainDB IO (Block cfg)
+  -> Index IO (Header ByronBlock)
+  -> ChainDB IO ByronBlock
   -> (forall a . Text -> IO a)
   -> Maybe Word
   -> Byron.Legacy.HeaderHash
@@ -609,7 +608,7 @@ bbsGetHashesRange rr idx db onErr mLimit from to = do
   drainIterator
     :: Word
     -> [Byron.Legacy.HeaderHash]
-    -> ChainDB.Iterator IO (Block cfg)
+    -> ChainDB.Iterator IO ByronBlock
     -> IO (Maybe (OldestFirst NonEmpty Byron.Legacy.HeaderHash))
   drainIterator 0 _   _    = pure Nothing
   drainIterator n acc iter = do
@@ -647,8 +646,8 @@ bbsGetHashesRange rr idx db onErr mLimit from to = do
 bbsGetBlockHeaders
   :: EpochSlots
   -> ResourceRegistry IO
-  -> Index IO (Header (Block cfg))
-  -> ChainDB IO (Block cfg)
+  -> Index IO (Header ByronBlock)
+  -> ChainDB IO ByronBlock
   -> (forall a . Text -> IO a)
   -> Maybe Word
   -> NonEmpty Byron.Legacy.HeaderHash
@@ -697,8 +696,8 @@ bbsGetBlockHeaders epochSlots rr idx db onErr mLimit checkpoints mTip = do
 -- previous.
 bbsGetLcaMainChain
   :: EpochSlots
-  -> Index IO (Header (Block cfg))
-  -> ChainDB IO (Block cfg)
+  -> Index IO (Header ByronBlock)
+  -> ChainDB IO ByronBlock
   -> (forall a . Text -> IO a)
   -> OldestFirst [] Byron.Legacy.HeaderHash
   -> IO (NewestFirst [] Byron.Legacy.HeaderHash, OldestFirst [] Byron.Legacy.HeaderHash)
@@ -730,12 +729,11 @@ instance Exception EmptyDatabaseError
 -- The `DB` given must not be empty. If it is, `getTip` will throw an
 -- exception. So be sure to seed the DB with the genesis block.
 withByronProxy
-  :: ( ApplyTx (Block cfg) )
-  => Tracer IO (Severity, Text.Builder)
+  :: Tracer IO (Severity, Text.Builder)
   -> ByronProxyConfig
-  -> Index IO (Header (Block cfg))
-  -> ChainDB IO (Block cfg)
-  -> Mempool IO (Block cfg) TicketNo
+  -> Index IO (Header ByronBlock)
+  -> ChainDB IO ByronBlock
+  -> Mempool IO ByronBlock TicketNo
   -> (ByronProxy -> IO t)
   -> IO t
 withByronProxy trace bpc idx db mempool k = do

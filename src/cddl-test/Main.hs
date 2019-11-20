@@ -17,17 +17,15 @@ import           System.Process.ByteString.Lazy (readProcessWithExitCode)
 import           Control.Exception (throwIO, try)
 import           Data.Word (Word64)
 
-import           Data.Reflection as Reflection (give)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.ByteString.Lazy.Char8 as Char8 (unpack)
 
 import           Control.Tracer (nullTracer)
 import qualified Cardano.Crypto as Cardano (ProtocolMagicId)
 import qualified Cardano.Chain.Slotting as Cardano (EpochSlots (..))
-import           Ouroboros.Consensus.Ledger.Byron.Config (ByronConfig)
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
          (decodeByronHeaderHash, encodeByronHeaderHash, encodeByronBlock, decodeByronBlock )
-import           Ouroboros.Byron.Proxy.Block (Block, isEBB)
+import           Ouroboros.Byron.Proxy.Block (ByronBlock, isEBB)
 
 import           Ouroboros.Storage.Common (EpochSize (..),EpochNo(..))
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, ImmDbArgs(..), openDB, getBlob)
@@ -63,7 +61,7 @@ main = do
 
 testBlocks :: FilePath -> FilePath -> FilePath -> Maybe [EpochNo] -> IO ()
 testBlocks cddlCmd cddlSpec chainDBPath range = do
-    db <- give epochSlots $ give givenProtocolMagic (dbArgs chainDBPath >>= openDB)
+    db <- dbArgs chainDBPath >>= openDB
     loop db blockList
     where
         (isLimitedRange, blockList) = case range of
@@ -91,7 +89,7 @@ validateCBOR cddlCmd cddlSpec bytes = do
         (ExitFailure _, _, err) -> error $ Char8.unpack err
         (ExitSuccess, _, _) -> return ()
 
-dbArgs :: FilePath -> IO (ImmDbArgs IO (Block ByronConfig))
+dbArgs :: FilePath -> IO (ImmDbArgs IO ByronBlock)
 dbArgs fp = do
   epochInfo <- newEpochInfo (const (pure $ EpochSize epochSize))
   return $ ImmDbArgs {
@@ -110,9 +108,9 @@ dbArgs fp = do
 data ReadResult = Block ByteString | FutureEpoch | NoData
   deriving (Show, Eq)
 
-readBlock :: ImmDB IO (Block ByronConfig) -> EpochNo -> IO ReadResult
+readBlock :: ImmDB IO ByronBlock -> EpochNo -> IO ReadResult
 readBlock db epoch = do
-    ret <- try $ give epochSlots $ give givenProtocolMagic $ getBlob db $ Left epoch
+    ret <- try $ getBlob db $ Left epoch
     case ret of
         (Left (UserError (ReadFutureEBBError _ _) _)) -> return FutureEpoch
         (Left err) -> throwIO err

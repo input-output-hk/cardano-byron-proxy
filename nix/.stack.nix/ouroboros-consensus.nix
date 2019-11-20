@@ -73,7 +73,6 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
           (hsPkgs."cardano-ledger" or (buildDepError "cardano-ledger"))
           (hsPkgs."cardano-prelude" or (buildDepError "cardano-prelude"))
           (hsPkgs."cborg" or (buildDepError "cborg"))
-          (hsPkgs."constraints" or (buildDepError "constraints"))
           (hsPkgs."containers" or (buildDepError "containers"))
           (hsPkgs."cryptonite" or (buildDepError "cryptonite"))
           (hsPkgs."deepseq" or (buildDepError "deepseq"))
@@ -85,7 +84,6 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
           (hsPkgs."mtl" or (buildDepError "mtl"))
           (hsPkgs."network" or (buildDepError "network"))
           (hsPkgs."pipes" or (buildDepError "pipes"))
-          (hsPkgs."reflection" or (buildDepError "reflection"))
           (hsPkgs."serialise" or (buildDepError "serialise"))
           (hsPkgs."stm" or (buildDepError "stm"))
           (hsPkgs."text" or (buildDepError "text"))
@@ -94,7 +92,10 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
           (hsPkgs."vector" or (buildDepError "vector"))
           ] ++ (if system.isWindows
           then [ (hsPkgs."Win32" or (buildDepError "Win32")) ]
-          else [ (hsPkgs."unix" or (buildDepError "unix")) ]);
+          else [
+            (hsPkgs."unix" or (buildDepError "unix"))
+            (hsPkgs."unix-bytestring" or (buildDepError "unix-bytestring"))
+            ]);
         buildable = true;
         };
       exes = {
@@ -114,7 +115,6 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
             (hsPkgs."ouroboros-consensus" or (buildDepError "ouroboros-consensus"))
             (hsPkgs."path" or (buildDepError "path"))
             (hsPkgs."path-io" or (buildDepError "path-io"))
-            (hsPkgs."reflection" or (buildDepError "reflection"))
             (hsPkgs."resourcet" or (buildDepError "resourcet"))
             (hsPkgs."streaming" or (buildDepError "streaming"))
             (hsPkgs."text" or (buildDepError "text"))
@@ -132,7 +132,6 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
             (hsPkgs."optparse-applicative" or (buildDepError "optparse-applicative"))
             (hsPkgs."ouroboros-consensus" or (buildDepError "ouroboros-consensus"))
             (hsPkgs."ouroboros-network" or (buildDepError "ouroboros-network"))
-            (hsPkgs."reflection" or (buildDepError "reflection"))
             ];
           buildable = true;
           };
@@ -170,7 +169,6 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
             (hsPkgs."QuickCheck" or (buildDepError "QuickCheck"))
             (hsPkgs."quickcheck-state-machine" or (buildDepError "quickcheck-state-machine"))
             (hsPkgs."random" or (buildDepError "random"))
-            (hsPkgs."reflection" or (buildDepError "reflection"))
             (hsPkgs."serialise" or (buildDepError "serialise"))
             (hsPkgs."tasty" or (buildDepError "tasty"))
             (hsPkgs."tasty-hunit" or (buildDepError "tasty-hunit"))
@@ -211,7 +209,6 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
             (hsPkgs."QuickCheck" or (buildDepError "QuickCheck"))
             (hsPkgs."quickcheck-state-machine" or (buildDepError "quickcheck-state-machine"))
             (hsPkgs."random" or (buildDepError "random"))
-            (hsPkgs."reflection" or (buildDepError "reflection"))
             (hsPkgs."serialise" or (buildDepError "serialise"))
             (hsPkgs."tasty" or (buildDepError "tasty"))
             (hsPkgs."tasty-hunit" or (buildDepError "tasty-hunit"))
@@ -229,8 +226,8 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/ouroboros-network";
-      rev = "2441f25ee5a2da0fbf008f3e9a1b1fd4e57f1de3";
-      sha256 = "08f0078kra48cfwb0sz0fk7vfh966jjh2np5yjqrszhh16z0hw5r";
+      rev = "f5ccf21a81021b5ccc2e581591ccc48725812337";
+      sha256 = "02k5hb0mdlsk5c4dsc7hhyj2p1nvghifcrbka9rkd2bwmpb0favc";
       });
     postUnpack = "sourceRoot+=/ouroboros-consensus; echo source root reset to \$sourceRoot";
     }

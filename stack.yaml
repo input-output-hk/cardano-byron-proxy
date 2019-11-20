@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/96e8dcb29dc3c29eee99c0d020152fad6071af6d/snapshot.yaml
+resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/3c40edcf5bdba8721d3430d0aaaeea8770ce9bec/snapshot.yaml
 
 packages:
   - .
@@ -6,34 +6,32 @@ packages:
 extra-deps:
 
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: 1ebe57df3a76a8ae4e3b5a31a9b85132f71534fc
+    commit: 4956b32f039579a0e7e4fd10793f65b4c77d9044
     subdirs:
       - iohk-monitoring
       - contra-tracer
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 5c575d46afbfe333de0ccba70b084db8302abf42
+    commit: 057d8a9a3e751f88fc7677df5713c5ecc47a37c4
     subdirs:
       - binary
       - binary/test
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: ad96c9a1d3be469a7d4f10ee1c443cdb15a12b19
+    commit: 52ffa26e6d5a204345ddc3e375b17cf1c96d3412
     subdirs:
       - cardano-ledger
-      - cardano-ledger/test
       - crypto
-      - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-prelude
-    commit: ad19158c7599bc5d50fe7cb0111a1488a139a381
+    commit: 3c40edcf5bdba8721d3430d0aaaeea8770ce9bec
     subdirs:
       - .
       - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: 8abae427c44f0b447117f78e2c1f5006dac2edf8
+    commit: f700afeb24163332dc00306508ca410b7873521d
     subdirs:
       - cardano-shell
 
@@ -41,7 +39,7 @@ extra-deps:
     commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: 2441f25ee5a2da0fbf008f3e9a1b1fd4e57f1de3
+    commit: f5ccf21a81021b5ccc2e581591ccc48725812337
     subdirs:
       - ouroboros-consensus
       - ouroboros-network
@@ -62,13 +60,15 @@ extra-deps:
   - splitmix-0.0.2
   - tasty-hedgehog-1.0.0.1
   - time-units-1.0.0
+  - katip-0.8.3.0
+
 
   # Windows only
   - Win32-2.5.4.1
 
   # The parts of cardano-sl that are needed for the byron proxy.
   - git: https://github.com/input-output-hk/cardano-sl
-    commit: c9c5f6103cbfcdfd6cecf19de5d570785a548cfd
+    commit: 7c968d8079ca344249dc92b33b4226eb3acd6832
     subdirs:
       - lib
       - binary
