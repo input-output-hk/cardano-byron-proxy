@@ -68,7 +68,7 @@ extra-deps:
 
   # The parts of cardano-sl that are needed for the byron proxy.
   - git: https://github.com/input-output-hk/cardano-sl
-    commit: 35871b5f912f5dd09be6e0cfa89e372046d65bbc
+    commit: c9c5f6103cbfcdfd6cecf19de5d570785a548cfd
     subdirs:
       - lib
       - binary
@@ -100,7 +100,7 @@ extra-deps:
     commit: 018a50b9042c2115c3ec9c9fd5ca5f28737dd29c
 
   - git: https://github.com/avieth/network-transport-tcp
-    commit: 2634e5e32178bb0456d800d133f8664321daa2ef
+    commit: 46f2942423d9ad3c81040565a9e9d5b9e08ddcc4
 
   - git: https://github.com/avieth/network-transport-inmemory
     commit: 5d8ff2b07b9df35cf61329a3d975e2c8cf95c12a
