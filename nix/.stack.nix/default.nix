@@ -13,6 +13,7 @@
         "tasty-hedgehog" = (((hackage.tasty-hedgehog)."1.0.0.1").revisions).default;
         "time-units" = (((hackage.time-units)."1.0.0").revisions).default;
         "katip" = (((hackage.katip)."0.8.3.0").revisions).default;
+        "statistics-linreg" = (((hackage.statistics-linreg)."0.3").revisions).default;
         "Win32" = (((hackage.Win32)."2.5.4.1").revisions).default;
         "aeson-options" = (((hackage.aeson-options)."0.1.0").revisions).default;
         "pvss" = (((hackage.pvss)."0.2.0").revisions).default;
