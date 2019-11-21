@@ -78,7 +78,7 @@ import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..))
 import Ouroboros.Consensus.Node.ProtocolInfo.Byron (PBftSignatureThreshold (..),
            protocolInfoByron)
 import Ouroboros.Network.NodeToNode (IPSubscriptionTarget (..), LocalAddresses (..),
-           withServer, ipSubscriptionWorker, networkErrorPolicy, newPeerStatesVar)
+           withServer, ipSubscriptionWorker, remoteNetworkErrorPolicy, newPeerStatesVar)
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (withRegistry)
 import Ouroboros.Network.Block (BlockNo (..), Point (..))
@@ -337,7 +337,7 @@ runShelleyServer addr _ ctable rversions = do
     wait
   where
     -- TODO: We might need some additional proxy-specific policies
-    errorPolicy = networkErrorPolicy <> consensusErrorPolicy
+    errorPolicy = remoteNetworkErrorPolicy <> consensusErrorPolicy
 
 runShelleyClient
   :: ( )
@@ -371,7 +371,7 @@ runShelleyClient producerAddrs _ ctable iversions = do
     iversions
   where
     -- TODO: We might need some additional proxy-specific policies
-    errorPolicy = networkErrorPolicy <> consensusErrorPolicy
+    errorPolicy = remoteNetworkErrorPolicy <> consensusErrorPolicy
 
 runByron
   :: Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
