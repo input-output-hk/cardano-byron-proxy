@@ -37,6 +37,8 @@ options:
       subtrace: NoTrace
     '#messagecounters.ekgview':
       subtrace: NoTrace
+    '#messagecounters.katip':
+      subtrace: NoTrace
   mapBackends:
     'byron-proxy.db.block count':
       - EKGViewBK
