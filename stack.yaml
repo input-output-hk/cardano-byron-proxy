@@ -19,7 +19,7 @@ extra-deps:
       - cardano-crypto-class
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 52ffa26e6d5a204345ddc3e375b17cf1c96d3412
+    commit: dbdb643722e431e4d232345a0eafdc7bdeab7b60
     subdirs:
       - cardano-ledger
       - crypto
@@ -31,7 +31,7 @@ extra-deps:
       - test
 
   - git: https://github.com/input-output-hk/cardano-shell
-    commit: f700afeb24163332dc00306508ca410b7873521d
+    commit: 4d26bcefc0edcd99154c85170ef028775c6dd1e0
     subdirs:
       - cardano-shell
 
@@ -39,7 +39,7 @@ extra-deps:
     commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: babf1a855e6bc745321b2516837f5cac174b6943
+    commit: 72866f3e08adad890e2b29303c01bd047c692b0f
     subdirs:
       - ouroboros-consensus
       - ouroboros-network
@@ -61,6 +61,7 @@ extra-deps:
   - tasty-hedgehog-1.0.0.1
   - time-units-1.0.0
   - katip-0.8.3.0
+  - statistics-linreg-0.3
 
 
   # Windows only

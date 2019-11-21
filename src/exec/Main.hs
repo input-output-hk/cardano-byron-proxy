@@ -11,7 +11,7 @@
 {-# LANGUAGE TypeFamilies #-}
 
 import Control.Concurrent.Async (concurrently, link, wait, withAsync)
-import Control.Exception (throwIO)
+import Control.Exception (IOException, throwIO)
 import Control.Monad (mapM, void)
 import Control.Monad.Trans.Except (runExceptT)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
@@ -22,10 +22,13 @@ import Data.String (fromString)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy.Builder as Text
+import Data.Time (DiffTime)
 import qualified Network.Socket as Network
 import qualified Options.Applicative as Opt
 import System.FilePath ((</>), takeDirectory)
 import System.IO.Error (userError)
+
+import Codec.CBOR.Read (DeserialiseFailure)
 
 import qualified Cardano.BM.Data.Aggregated as Monitoring
 import qualified Cardano.BM.Data.LogItem as Monitoring
@@ -62,6 +65,9 @@ import qualified Pos.Util.Trace.Named as Trace (LogNamed (..), appendName, named
 import qualified Pos.Util.Trace
 import qualified Pos.Util.Wlog as Wlog
 
+import Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput (..))
+import Network.Mux.Types (MuxError (..), MuxErrorType (..))
+
 import Ouroboros.Byron.Proxy.Block (ByronBlock)
 import Ouroboros.Byron.Proxy.Index.Types (Index)
 import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Index (TraceEvent)
@@ -78,13 +84,18 @@ import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..))
 import Ouroboros.Consensus.Node.ProtocolInfo.Byron (PBftSignatureThreshold (..),
            protocolInfoByron)
 import Ouroboros.Network.NodeToNode (IPSubscriptionTarget (..), LocalAddresses (..),
-           withServer, ipSubscriptionWorker, networkErrorPolicy, newPeerStatesVar)
+           ErrorPolicies (..), ErrorPolicy (..), NodeToNodeVersion, withServer,
+           ipSubscriptionWorker, newPeerStatesVar)
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (withRegistry)
 import Ouroboros.Network.Block (BlockNo (..), Point (..))
 import Ouroboros.Network.Point (WithOrigin (..))
-import Ouroboros.Network.Protocol.Handshake.Type (acceptEq)
+import Ouroboros.Network.ErrorPolicy (SuspendDecision (..))
+import Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
+import Ouroboros.Network.Protocol.Handshake.Type (HandshakeClientProtocolError, acceptEq)
 import Ouroboros.Network.Protocol.Handshake.Version (DictVersion (..))
+import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
+import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 import Ouroboros.Network.Server.ConnectionTable (ConnectionTable)
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 import Ouroboros.Storage.ChainDB.Impl.Types (TraceEvent (..), TraceAddBlockEvent (..), TraceValidationEvent (..))
@@ -339,6 +350,7 @@ runShelleyServer addr _ ctable rversions = do
     -- TODO: We might need some additional proxy-specific policies
     errorPolicy = networkErrorPolicy <> consensusErrorPolicy
 
+
 runShelleyClient
   :: ( )
   => [Address]
@@ -372,6 +384,88 @@ runShelleyClient producerAddrs _ ctable iversions = do
   where
     -- TODO: We might need some additional proxy-specific policies
     errorPolicy = networkErrorPolicy <> consensusErrorPolicy
+
+-- | Error policies for a trusted deployment (behind a firewall).
+--
+networkErrorPolicy :: ErrorPolicies Network.SockAddr a
+networkErrorPolicy = ErrorPolicies {
+    epAppErrorPolicies = [
+        -- Handshake client protocol error: we either did not recognise received
+        -- version or we refused it.  This is only for outbound connections,
+        -- thus we suspend the consumer.
+        ErrorPolicy
+          $ \(_ :: HandshakeClientProtocolError NodeToNodeVersion)
+                -> Just misconfiguredPeer
+
+        -- exception thrown by `runDecoderWithByteLimit`; we received to
+        -- many bytes from the network.
+      , ErrorPolicy
+          $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+                 -> Just theyBuggy
+
+        -- deserialisation failure;  It means that the remote peer has
+        -- a bug.
+      , ErrorPolicy
+          $ \(_ :: DeserialiseFailure)
+                -> Just theyBuggy
+
+        -- network errors:
+        -- * if the bearer sends invalid data we suspend the peer for
+        --   a short time (10s)
+        -- * if there was network error, e.g. 'MuxBearerClosed' or
+        --   'IOException' we don't suspend the peer and allow it to
+        --   re-connect immediately.
+      , ErrorPolicy
+          $ \(e :: MuxError)
+                -> case errorType e of
+                      MuxUnknownMiniProtocol  -> Just theyBuggy
+                      MuxDecodeError          -> Just theyBuggy
+                      MuxIngressQueueOverRun  -> Just theyBuggy
+                      MuxControlProtocolError -> Just theyBuggy
+                      MuxTooLargeMessage      -> Just theyBuggy
+
+                      -- in case of bearer closed / or IOException we do
+                      -- not suspend the peer, it can resume immediately
+                      MuxBearerClosed         -> Nothing
+                      MuxIOException{}        -> Nothing
+
+        -- Error policy for TxSubmission protocol: outbound side (client role)
+      , ErrorPolicy
+          $ \(_ :: TxOutbound.TxSubmissionProtocolError)
+                -> Just theyBuggy
+
+        -- Error policy for TxSubmission protocol: inbound side (server role)
+      , ErrorPolicy
+          $ \(_ :: TxInbound.TxSubmissionProtocolError)
+                -> Just theyBuggy
+
+        -- Error policy for BlockFetch protocol: consumer side (client role)
+      , ErrorPolicy
+          $ \(_ :: BlockFetchProtocolFailure)
+                -> Just theyBuggy
+      ],
+
+      epConErrorPolicies = [
+        -- If `connect` thrown an exception, try to re-connect to the peer after
+        -- a short delay
+        ErrorPolicy $ \(_ :: IOException) -> Just (SuspendConsumer shortDelay)
+      ],
+
+      -- impossible happened, since none of the protocol terminates
+      epReturnCallback = \_ _ _ -> ourBug
+    }
+  where
+    misconfiguredPeer :: SuspendDecision DiffTime
+    misconfiguredPeer = SuspendConsumer shortDelay
+
+    theyBuggy :: SuspendDecision DiffTime
+    theyBuggy = SuspendPeer shortDelay shortDelay
+
+    ourBug :: SuspendDecision DiffTime
+    ourBug = Throw
+
+    shortDelay :: DiffTime
+    shortDelay = 10 -- seconds
 
 runByron
   :: Tracer IO (Monitoring.LoggerName, Monitoring.Severity, Text.Builder)
