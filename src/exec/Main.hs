@@ -89,6 +89,7 @@ import Ouroboros.Network.NodeToNode (IPSubscriptionTarget (..), LocalAddresses (
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (withRegistry)
 import Ouroboros.Network.Block (BlockNo (..), Point (..))
+import Ouroboros.Network.ErrorPolicy (WithAddr (..), ErrorPolicyTrace (..))
 import Ouroboros.Network.Point (WithOrigin (..))
 import Ouroboros.Network.ErrorPolicy (SuspendDecision (..))
 import Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
@@ -326,18 +327,19 @@ cliParserInfo = Opt.info cliParser infoMod
 
 runShelleyServer
   :: ( )
-  => Address
+  => Tracer IO (WithAddr Network.SockAddr ErrorPolicyTrace)
+  -> Address
   -> ResourceRegistry IO
   -> ConnectionTable IO Network.SockAddr
   -> Shelley.ResponderVersions
   -> IO ()
-runShelleyServer addr _ ctable rversions = do
+runShelleyServer tracer addr _ ctable rversions = do
   addrInfo <- resolveAddress addr
   peerStatesVar <- newPeerStatesVar
   withServer
     nullTracer
     nullTracer
-    nullTracer
+    tracer
     ctable
     peerStatesVar
     addrInfo
@@ -353,12 +355,13 @@ runShelleyServer addr _ ctable rversions = do
 
 runShelleyClient
   :: ( )
-  => [Address]
+  => Tracer IO (WithAddr Network.SockAddr ErrorPolicyTrace)
+  -> [Address]
   -> ResourceRegistry IO
   -> ConnectionTable IO Network.SockAddr
   -> Shelley.InitiatorVersions
   -> IO ()
-runShelleyClient producerAddrs _ ctable iversions = do
+runShelleyClient tracer producerAddrs _ ctable iversions = do
   -- Expect AddrInfo, convert to SockAddr, then pass to ipSubscriptionWorker
   sockAddrs <- mapM resolveAddress producerAddrs
   peerStatesVar <- newPeerStatesVar -- TODO: Ideally should share state with runShelleyServer
@@ -366,7 +369,7 @@ runShelleyClient producerAddrs _ ctable iversions = do
     nullTracer
     nullTracer
     nullTracer
-    nullTracer
+    tracer
     Shelley.mkPeer
     ctable
     peerStatesVar
@@ -523,6 +526,20 @@ runByron tracer byronOptions genesisConfig blockConfig updateConfig nodeConfig e
     (\tbuilder -> (Text.pack "main.client", Monitoring.Info, tbuilder))
     tracer
 
+-- | For use by the Shelley server/client error policy tracers.
+defineSeverity :: ErrorPolicyTrace -> Monitoring.Severity
+defineSeverity it = case it of
+  ErrorPolicySuspendPeer {} -> Monitoring.Warning -- peer misbehaved
+  ErrorPolicySuspendConsumer {} -> Monitoring.Notice -- peer temporarily not useful
+  ErrorPolicyLocalNodeError {} -> Monitoring.Error
+  ErrorPolicyResumePeer {} -> Monitoring.Debug
+  ErrorPolicyKeepSuspended {} -> Monitoring.Debug
+  ErrorPolicyResumeConsumer {} -> Monitoring.Debug
+  ErrorPolicyResumeProducer {} -> Monitoring.Debug
+  ErrorPolicyUnhandledApplicationException {} -> Monitoring.Error
+  ErrorPolicyUnhandledConnectionException {} -> Monitoring.Error
+  ErrorPolicyAcceptException {} -> Monitoring.Error
+
 main :: IO ()
 main = do
   bpo <- Opt.execParser cliParserInfo
@@ -647,9 +664,19 @@ main = do
           btime <- realBlockchainTime rr slotDuration systemStart
           withDB dbc dbTracer indexTracer rr nodeConfig extLedgerState $ \idx cdb -> do
             traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
+            let shelleyClientTracer = contramap (\it -> ("shelley.client", defineSeverity (wiaEvent it), fromString (show it))) (Logging.convertTrace' trace)
+                shelleyServerTracer = contramap (\it -> ("shelley.server", defineSeverity (wiaEvent it), fromString (show it))) (Logging.convertTrace' trace)
             Shelley.withShelley rr cdb nodeConfig nodeState btime $ \kernel ctable iversions rversions -> do
-              let server = runShelleyServer (soLocalAddress      (bpoShelleyOptions bpo)) rr ctable rversions
-                  client = runShelleyClient (soProducerAddresses (bpoShelleyOptions bpo)) rr ctable iversions
+              let server = runShelleyServer shelleyServerTracer
+                                            (soLocalAddress (bpoShelleyOptions bpo))
+                                            rr
+                                            ctable
+                                            rversions
+                  client = runShelleyClient shelleyClientTracer
+                                            (soProducerAddresses (bpoShelleyOptions bpo))
+                                            rr
+                                            ctable
+                                            iversions
                   byron  = case bpoByronOptions bpo of
                     Nothing -> pure ()
                     Just bopts -> runByron
