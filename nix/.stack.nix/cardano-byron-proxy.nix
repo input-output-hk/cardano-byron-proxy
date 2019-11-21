@@ -129,6 +129,7 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
             (hsPkgs."io-sim-classes" or (buildDepError "io-sim-classes"))
             (hsPkgs."lens" or (buildDepError "lens"))
             (hsPkgs."network" or (buildDepError "network"))
+            (hsPkgs."network-mux" or (buildDepError "network-mux"))
             (hsPkgs."optparse-applicative" or (buildDepError "optparse-applicative"))
             (hsPkgs."ouroboros-consensus" or (buildDepError "ouroboros-consensus"))
             (hsPkgs."ouroboros-network" or (buildDepError "ouroboros-network"))

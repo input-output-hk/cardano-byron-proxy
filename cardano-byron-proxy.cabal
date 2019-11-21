@@ -107,6 +107,7 @@ executable cardano-byron-proxy
                        io-sim-classes,
                        lens,
                        network,
+                       network-mux,
                        optparse-applicative,
                        ouroboros-consensus,
                        ouroboros-network,
