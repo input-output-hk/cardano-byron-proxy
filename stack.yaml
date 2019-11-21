@@ -68,7 +68,7 @@ extra-deps:
 
   # The parts of cardano-sl that are needed for the byron proxy.
   - git: https://github.com/input-output-hk/cardano-sl
-    commit: 7c968d8079ca344249dc92b33b4226eb3acd6832
+    commit: 5ab1080d64f391123a8bacd17c45d35a9666ba57
     subdirs:
       - lib
       - binary
