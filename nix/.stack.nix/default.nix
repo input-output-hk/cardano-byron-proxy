@@ -72,7 +72,6 @@
         kademlia = ./kademlia.nix;
         network-transport = ./network-transport.nix;
         network-transport-tcp = ./network-transport-tcp.nix;
-        network-transport-inmemory = ./network-transport-inmemory.nix;
         universum = ./universum.nix;
         serokell-util = ./serokell-util.nix;
         ether = ./ether.nix;

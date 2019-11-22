@@ -311,11 +311,6 @@ source-repository-package
 
 source-repository-package
   type: git
-  location: https://github.com/avieth/network-transport-inmemory
-  tag: 5d8ff2b07b9df35cf61329a3d975e2c8cf95c12a
-
-source-repository-package
-  type: git
   location: https://github.com/input-output-hk/universum
   tag: 15f7db758ff5a24b874de2247f6f7a4576562da5
 
