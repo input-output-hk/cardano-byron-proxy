@@ -86,8 +86,8 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-sl";
-      rev = "c63554ba5c1e5bb0203088d395ab649968bb3d24";
-      sha256 = "0pbmqizy9c850w0n939kywwzkn76yx6sm84sgcwljwhznpbzqg3y";
+      rev = "93bfeb84813d560be0d8f0810ee27b727410c1e6";
+      sha256 = "0ybrjc3byv54jvsd6bhy4yrdcw84hldjjg0fqzyfryzb9xilcwz1";
       });
     postUnpack = "sourceRoot+=/core/test; echo source root reset to \$sourceRoot";
     }
