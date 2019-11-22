@@ -42,7 +42,7 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
     flags = { benchmarks = false; };
     package = {
       specVersion = "1.20";
-      identifier = { name = "cardano-sl-networking"; version = "3.1.0"; };
+      identifier = { name = "cardano-sl-networking"; version = "3.2.0"; };
       license = "Apache-2.0";
       copyright = "";
       maintainer = "";
@@ -210,8 +210,8 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-sl";
-      rev = "7c968d8079ca344249dc92b33b4226eb3acd6832";
-      sha256 = "1ps1nqhs67pm11q1r3ngry7s6mdp38hnsjqp7nmh1j98r78f6wsd";
+      rev = "c63554ba5c1e5bb0203088d395ab649968bb3d24";
+      sha256 = "0pbmqizy9c850w0n939kywwzkn76yx6sm84sgcwljwhznpbzqg3y";
       });
     postUnpack = "sourceRoot+=/networking; echo source root reset to \$sourceRoot";
     }
