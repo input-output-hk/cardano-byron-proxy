@@ -126,6 +126,7 @@ in { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
             (hsPkgs."exceptions" or (buildDepError "exceptions"))
             (hsPkgs."filepath" or (buildDepError "filepath"))
             (hsPkgs."iohk-monitoring" or (buildDepError "iohk-monitoring"))
+            (hsPkgs."lobemo-backend-ekg" or (buildDepError "lobemo-backend-ekg"))
             (hsPkgs."io-sim-classes" or (buildDepError "io-sim-classes"))
             (hsPkgs."lens" or (buildDepError "lens"))
             (hsPkgs."network" or (buildDepError "network"))

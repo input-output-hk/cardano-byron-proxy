@@ -34,6 +34,7 @@
         cardano-byron-proxy = ./cardano-byron-proxy.nix;
         iohk-monitoring = ./iohk-monitoring.nix;
         contra-tracer = ./contra-tracer.nix;
+        lobemo-backend-ekg = ./lobemo-backend-ekg.nix;
         cardano-binary = ./cardano-binary.nix;
         cardano-binary-test = ./cardano-binary-test.nix;
         cardano-crypto-class = ./cardano-crypto-class.nix;

@@ -2,6 +2,7 @@
 
 module Logging where
 
+import Control.Exception (bracket)
 import Control.Tracer (Tracer (..))
 import Data.Functor.Contravariant (contramap)
 import Data.Text (Text)
@@ -9,12 +10,14 @@ import qualified Data.Text.Lazy as Text (toStrict)
 import qualified Data.Text.Lazy.Builder as Text
 
 import qualified Cardano.BM.Configuration.Model as Monitoring (setupFromRepresentation)
+import qualified Cardano.BM.Backend.EKGView
 import qualified Cardano.BM.Data.BackendKind as Monitoring
 import qualified Cardano.BM.Data.Configuration as Monitoring
 import qualified Cardano.BM.Data.LogItem as Monitoring
 import qualified Cardano.BM.Data.Output as Monitoring
 import qualified Cardano.BM.Data.Severity as Monitoring
-import qualified Cardano.BM.Setup as Monitoring (withTrace)
+import           Cardano.BM.Plugin (loadPlugin)
+import qualified Cardano.BM.Setup as Monitoring (setupTrace_, shutdown)
 import qualified Cardano.BM.Trace as Monitoring (Trace)
 
 -- | Set up logging using an optional configuration file.
@@ -32,7 +35,15 @@ withLogging mLoggerConfig name k = do
   -- iohk-monitoring uses some MVar for configuration, which corresponds to
   -- the "Representation" which we call config.
   loggerConfig' <- Monitoring.setupFromRepresentation loggerConfig
-  Monitoring.withTrace loggerConfig' name k
+  bracket
+    (do (tr0, sb0) <- Monitoring.setupTrace_ loggerConfig' name
+        -- load plugin for EKG and Prometheus backend
+        Cardano.BM.Backend.EKGView.plugin loggerConfig' tr0 sb0
+          >>= loadPlugin sb0
+        return (tr0, sb0)
+    )
+    (\(_,sb) -> Monitoring.shutdown sb)
+    (\(tr,_) -> k tr)
 
 -- | `withTrace` from the monitoring framework gives us a trace that
 -- works on `LogObjects`. `convertTrace` will make it into a `Trace IO Text`

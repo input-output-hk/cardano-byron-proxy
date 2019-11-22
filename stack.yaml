@@ -10,6 +10,7 @@ extra-deps:
     subdirs:
       - iohk-monitoring
       - contra-tracer
+      - plugins/backend-ekg
 
   - git: https://github.com/input-output-hk/cardano-base
     commit: 057d8a9a3e751f88fc7677df5713c5ecc47a37c4
