@@ -39,7 +39,7 @@ extra-deps:
     commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: 72866f3e08adad890e2b29303c01bd047c692b0f
+    commit: 5941c192b64f39d1ab276e0a747a0e47fb52cef8
     subdirs:
       - ouroboros-consensus
       - ouroboros-network
@@ -69,7 +69,7 @@ extra-deps:
 
   # The parts of cardano-sl that are needed for the byron proxy.
   - git: https://github.com/input-output-hk/cardano-sl
-    commit: 7c968d8079ca344249dc92b33b4226eb3acd6832
+    commit: c63554ba5c1e5bb0203088d395ab649968bb3d24
     subdirs:
       - lib
       - binary
