@@ -85,6 +85,7 @@
             (hsPkgs.exceptions)
             (hsPkgs.filepath)
             (hsPkgs.iohk-monitoring)
+            (hsPkgs.lobemo-backend-ekg)
             (hsPkgs.io-sim-classes)
             (hsPkgs.lens)
             (hsPkgs.network)

@@ -104,6 +104,7 @@ executable cardano-byron-proxy
                        exceptions,
                        filepath,
                        iohk-monitoring,
+                       lobemo-backend-ekg,
                        io-sim-classes,
                        lens,
                        network,
