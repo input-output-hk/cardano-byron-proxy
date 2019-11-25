@@ -56,14 +56,13 @@ extra-deps:
   - generic-monoid-0.1.0.0
   - graphviz-2999.20.0.3@sha256:cde383c356bc41136ed53cd27e0800f46dbd2185600dd0de18d66d5c49739d94
   - libsystemd-journal-1.4.4
-  - prometheus-2.1.1
+  - prometheus-2.1.2
   - quickcheck-state-machine-0.6.0@sha256:3e4f8df0f6b5d415e3c8840dc75034a63e37f56f5f8cfa1035ded16345235ac4
   - splitmix-0.0.2
   - tasty-hedgehog-1.0.0.1
   - time-units-1.0.0
   - katip-0.8.3.0
   - statistics-linreg-0.3
-
 
   # Windows only
   - Win32-2.5.4.1
