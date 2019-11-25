@@ -616,10 +616,10 @@ main = do
                   -- NB this is here because devops wanted an EKG metric on
                   -- block count. FIXME should be done in a more sane way...
                   let val  = Monitoring.PureI (fromIntegral blockno)
-                      item = ("db", Monitoring.Info, Monitoring.LogValue "blockNum" val)
+                      item = ("ChainDB", Monitoring.Info, Monitoring.LogValue "blockNum" val)
                   in  doConvertedTrace item
               TraceAddBlockEvent (AddBlockValidation it@(InvalidBlock _ _)) ->
-                  let val = ("db", Monitoring.Error, Monitoring.LogMessage (fromString (show it)))
+                  let val = ("ChainDB", Monitoring.Error, Monitoring.LogMessage (fromString (show it)))
                   in  doConvertedTrace val
               _ -> pure ()
             indexTracer :: Tracer IO Index.TraceEvent
