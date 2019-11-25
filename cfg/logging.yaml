@@ -40,5 +40,5 @@ options:
     '#messagecounters.katip':
       subtrace: NoTrace
   mapBackends:
-    'byron-proxy.db.block count':
+    'cardano_byron_proxy.ChainDB.blockNum':
       - EKGViewBK
