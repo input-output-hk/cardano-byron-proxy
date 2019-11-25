@@ -543,7 +543,7 @@ defineSeverity it = case it of
 main :: IO ()
 main = do
   bpo <- Opt.execParser cliParserInfo
-  Logging.withLogging (bpoLoggerConfigPath bpo) "byron-proxy" $ \trace -> do
+  Logging.withLogging (bpoLoggerConfigPath bpo) "cardano_byron_proxy" $ \trace -> do
     -- We always need the cardano-sl configuration, even if we're not
     -- connecting to a Byron peer, because that's where the blockchain
     -- configuration comes from: slots-per-epoch in particular.
