@@ -73,8 +73,8 @@ withShelley rr cdb conf state blockchainTime k = do
   k kernel ctable (initiatorNetworkApplication <$> vs) (responderNetworkApplication <$> vs)
 
 versions
-  :: NodeConfig (BlockProtocol ByronBlock) -> NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
-  -> Versions NodeToNodeVersion DictVersion (NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ())
+  :: NodeConfig (BlockProtocol ByronBlock) -> NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
+  -> Versions NodeToNodeVersion DictVersion (NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ())
 versions conf = simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData (nodeNetworkMagic (Proxy @ByronBlock) conf)) (DictVersion nodeToNodeCodecCBORTerm)
 
 mkParams

@@ -601,7 +601,7 @@ bbsGetHashesRange rr idx db onErr mLimit from to = do
     case outcome of
       Left (ChainDB.MissingBlock _point)      -> onErr "FIXME put error message"
       Left (ChainDB.ForkTooOld   _streamFrom) -> onErr "FIXME put error message"
-      Right iterator                          -> pure iterator
+      Right iterator                          -> pure $ ChainDB.deserialiseIterator iterator
 
   releaseIterator = ChainDB.iteratorClose
 
