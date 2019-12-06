@@ -3,7 +3,7 @@
     flags = {};
     package = {
       specVersion = "1.10";
-      identifier = { name = "cardano-byron-proxy"; version = "1.0.0"; };
+      identifier = { name = "cardano-byron-proxy"; version = "1.0.1"; };
       license = "Apache-2.0";
       copyright = "(c) 2019 IOHK";
       maintainer = "operations@iohk.io";
