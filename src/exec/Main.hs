@@ -10,7 +10,7 @@
 
 {-# LANGUAGE TypeFamilies #-}
 
-import Control.Concurrent.Async (concurrently, link, wait, withAsync)
+import Control.Concurrent.Async (concurrently, link, withAsync)
 import Control.Exception (IOException, throwIO)
 import Control.Monad (mapM, void)
 import Control.Monad.Trans.Except (runExceptT)
@@ -23,6 +23,7 @@ import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy.Builder as Text
 import Data.Time (DiffTime)
+import Data.Void (Void)
 import qualified Network.Socket as Network
 import qualified Options.Applicative as Opt
 import System.FilePath ((</>), takeDirectory)
@@ -83,9 +84,7 @@ import Ouroboros.Consensus.Node.ErrorPolicy (consensusErrorPolicy)
 import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..))
 import Ouroboros.Consensus.Node.ProtocolInfo.Byron (PBftSignatureThreshold (..),
            protocolInfoByron)
-import Ouroboros.Network.NodeToNode (IPSubscriptionTarget (..), LocalAddresses (..),
-           ErrorPolicies (..), ErrorPolicy (..), NodeToNodeVersion, withServer,
-           ipSubscriptionWorker, newPeerStatesVar)
+import Ouroboros.Network.NodeToNode
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (withRegistry)
 import Ouroboros.Network.Block (BlockNo (..), Point (..))
@@ -93,8 +92,7 @@ import Ouroboros.Network.ErrorPolicy (WithAddr (..), ErrorPolicyTrace (..))
 import Ouroboros.Network.Point (WithOrigin (..))
 import Ouroboros.Network.ErrorPolicy (SuspendDecision (..))
 import Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
-import Ouroboros.Network.Protocol.Handshake.Type (HandshakeClientProtocolError, acceptEq)
-import Ouroboros.Network.Protocol.Handshake.Version (DictVersion (..))
+import Ouroboros.Network.Protocol.Handshake.Type (HandshakeClientProtocolError)
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 import Ouroboros.Network.Server.ConnectionTable (ConnectionTable)
@@ -326,28 +324,25 @@ cliParserInfo = Opt.info cliParser infoMod
     <> Opt.fullDesc
 
 runShelleyServer
-  :: ( )
-  => Tracer IO (WithAddr Network.SockAddr ErrorPolicyTrace)
+  :: Tracer IO (WithAddr Network.SockAddr ErrorPolicyTrace)
   -> Address
   -> ResourceRegistry IO
   -> ConnectionTable IO Network.SockAddr
   -> Shelley.ResponderVersions
-  -> IO ()
-runShelleyServer tracer addr _ ctable rversions = do
+  -> IO Void
+runShelleyServer tracer addr _ _ rversions = do
   addrInfo <- resolveAddress addr
-  peerStatesVar <- newPeerStatesVar
+  networkState <- newNetworkMutableState
   withServer
-    nullTracer
-    nullTracer
-    tracer
-    ctable
-    peerStatesVar
+    NetworkServerTracers {
+        nstMuxTracer = nullTracer,
+        nstHandshakeTracer = nullTracer,
+        nstErrorPolicyTracer = tracer
+    }
+    networkState
     addrInfo
-    Shelley.mkPeer
-    (\(DictVersion _) -> acceptEq)
     rversions
     errorPolicy
-    wait
   where
     -- TODO: We might need some additional proxy-specific policies
     errorPolicy = networkErrorPolicy <> consensusErrorPolicy
@@ -360,29 +355,31 @@ runShelleyClient
   -> ResourceRegistry IO
   -> ConnectionTable IO Network.SockAddr
   -> Shelley.InitiatorVersions
-  -> IO ()
-runShelleyClient tracer producerAddrs _ ctable iversions = do
+  -> IO Void
+runShelleyClient tracer producerAddrs _ _ iversions = do
   -- Expect AddrInfo, convert to SockAddr, then pass to ipSubscriptionWorker
   sockAddrs <- mapM resolveAddress producerAddrs
-  peerStatesVar <- newPeerStatesVar -- TODO: Ideally should share state with runShelleyServer
+  networkState <- newNetworkMutableState -- TODO: Ideally should share state with runShelleyServer
   ipSubscriptionWorker
-    nullTracer
-    nullTracer
-    nullTracer
-    tracer
-    Shelley.mkPeer
-    ctable
-    peerStatesVar
-    (LocalAddresses
-     (Just (Network.SockAddrInet 0 0))
-     (Just (Network.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
-     Nothing)
-    (const Nothing)
-    errorPolicy
-    (IPSubscriptionTarget {
-         ispIps     = fmap Network.addrAddress sockAddrs
-       , ispValency = length sockAddrs
+    NetworkIPSubscriptionTracers {
+        nistMuxTracer = nullTracer,
+        nistHandshakeTracer = nullTracer,
+        nistErrorPolicyTracer = tracer,
+        nistSubscriptionTracer = nullTracer
+    }
+    networkState
+    SubscriptionParams {
+      spLocalAddresses = (LocalAddresses
+        (Just (Network.SockAddrInet 0 0))
+        (Just (Network.SockAddrInet6 0 0 (0, 0, 0, 1) 0))
+        Nothing),
+      spConnectionAttemptDelay = const Nothing,
+      spErrorPolicies = errorPolicy,
+      spSubscriptionTarget = (IPSubscriptionTarget {
+          ispIps     = fmap Network.addrAddress sockAddrs
+        , ispValency = length sockAddrs
        })
+    }
     iversions
   where
     -- TODO: We might need some additional proxy-specific policies
@@ -662,7 +659,7 @@ main = do
               slotDuration = SlotLength (fromRational (toRational slotMs / 1000))
               systemStart = SystemStart (Cardano.gdStartTime (Cardano.configGenesisData newGenesisConfig))
           btime <- realBlockchainTime rr slotDuration systemStart
-          withDB dbc dbTracer indexTracer rr nodeConfig extLedgerState $ \idx cdb -> do
+          withDB dbc dbTracer indexTracer rr btime nodeConfig extLedgerState slotDuration $ \idx cdb -> do
             traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
             let shelleyClientTracer = contramap (\it -> ("shelley.client", defineSeverity (wiaEvent it), fromString (show it))) (Logging.convertTrace' trace)
                 shelleyServerTracer = contramap (\it -> ("shelley.server", defineSeverity (wiaEvent it), fromString (show it))) (Logging.convertTrace' trace)

@@ -7,20 +7,18 @@ module Shelley where
 
 import qualified Data.ByteString.Lazy as Lazy
 import Data.Void (Void)
-import Network.Socket (SockAddr)
 
 -- ToCBOR/FromCBOR UTxOValidationError, for local tx submission codec.
 import Cardano.Chain.UTxO.Validation ()
 import Crypto.Random (drgNew)
 import qualified Network.Socket as Socket
 
-import Cardano.Prelude (NoUnexpectedThunks, OnlyCheckIsWHNF(..), Proxy(..))
+import Cardano.Prelude (Proxy(..))
 
 import Ouroboros.Byron.Proxy.Block (ByronBlock)
 import Ouroboros.Consensus.Block (BlockProtocol)
 import Ouroboros.Consensus.Protocol (NodeConfig, NodeState)
 import Ouroboros.Consensus.Mempool.Impl (MempoolCapacity (..))
-import Ouroboros.Consensus.Util.Condense (Condense (..))
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 
@@ -37,19 +35,9 @@ import Ouroboros.Consensus.Node.Tracers (nullTracers)
 import Ouroboros.Consensus.Node.Run.Abstract (nodeBlockFetchSize, nodeBlockMatchesHeader)
 import Ouroboros.Consensus.NodeNetwork
 
-newtype Peer = Peer { getPeer :: (SockAddr, SockAddr) }
-  deriving (Eq, Ord, Show)
-  deriving NoUnexpectedThunks via OnlyCheckIsWHNF "Peer" Peer
+type InitiatorVersions = Versions NodeToNodeVersion DictVersion (OuroborosApplication 'InitiatorApp ConnectionId NodeToNodeProtocols IO Lazy.ByteString () Void)
 
-instance Condense Peer where
-  condense = show
-
-mkPeer :: SockAddr -> SockAddr -> Peer
-mkPeer a b = Peer (a, b)
-
-type InitiatorVersions = Versions NodeToNodeVersion DictVersion (OuroborosApplication 'InitiatorApp Peer NodeToNodeProtocols IO Lazy.ByteString () Void)
-
-type ResponderVersions = Versions NodeToNodeVersion DictVersion (OuroborosApplication 'ResponderApp Peer NodeToNodeProtocols IO Lazy.ByteString Void ())
+type ResponderVersions = Versions NodeToNodeVersion DictVersion (OuroborosApplication 'ResponderApp ConnectionId NodeToNodeProtocols IO Lazy.ByteString Void ())
 
 -- Must have `ByronGiven` because of the constraints on `nodeKernel`
 withShelley
@@ -58,7 +46,7 @@ withShelley
   -> NodeConfig (BlockProtocol ByronBlock)
   -> NodeState (BlockProtocol ByronBlock)
   -> BlockchainTime IO
-  -> (NodeKernel IO Peer ByronBlock -> ConnectionTable IO Socket.SockAddr -> InitiatorVersions -> ResponderVersions -> IO t)
+  -> (NodeKernel IO ConnectionId ByronBlock -> ConnectionTable IO Socket.SockAddr -> InitiatorVersions -> ResponderVersions -> IO t)
   -> IO t
 withShelley rr cdb conf state blockchainTime k = do
   ctable <- newConnectionTable
@@ -73,8 +61,8 @@ withShelley rr cdb conf state blockchainTime k = do
   k kernel ctable (initiatorNetworkApplication <$> vs) (responderNetworkApplication <$> vs)
 
 versions
-  :: NodeConfig (BlockProtocol ByronBlock) -> NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
-  -> Versions NodeToNodeVersion DictVersion (NetworkApplication IO Peer Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ())
+  :: NodeConfig (BlockProtocol ByronBlock) -> NetworkApplication IO ConnectionId Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
+  -> Versions NodeToNodeVersion DictVersion (NetworkApplication IO ConnectionId Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ())
 versions conf = simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData (nodeNetworkMagic (Proxy @ByronBlock) conf)) (DictVersion nodeToNodeCodecCBORTerm)
 
 mkParams
@@ -83,7 +71,7 @@ mkParams
   -> NodeConfig (BlockProtocol ByronBlock)
   -> NodeState (BlockProtocol ByronBlock)
   -> BlockchainTime IO
-  -> NodeArgs IO Peer ByronBlock
+  -> NodeArgs IO ConnectionId ByronBlock
 mkParams rr cdb nconf nstate blockchainTime = NodeArgs
   { tracers = nullTracers
   , registry = rr
