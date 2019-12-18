@@ -86,6 +86,6 @@ trackChainDB rr idx cdb = bracket acquireReader releaseReader $ \rdr -> do
   trackReaderBlocking idx rdr
   where
   acquireReader :: IO (Reader IO blk (Header blk))
-  acquireReader = ChainDB.newHeaderReader cdb rr
+  acquireReader = ChainDB.deserialiseReader <$> ChainDB.newHeaderReader cdb rr
   releaseReader :: Reader IO blk (Header blk) -> IO ()
   releaseReader = ChainDB.readerClose

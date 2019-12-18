@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE TypeApplications #-}
 
 module Shelley where
@@ -10,7 +11,6 @@ import Data.Void (Void)
 
 -- ToCBOR/FromCBOR UTxOValidationError, for local tx submission codec.
 import Cardano.Chain.UTxO.Validation ()
-import Crypto.Random (drgNew)
 import qualified Network.Socket as Socket
 
 import Cardano.Prelude (Proxy(..))
@@ -18,7 +18,7 @@ import Cardano.Prelude (Proxy(..))
 import Ouroboros.Byron.Proxy.Block (ByronBlock)
 import Ouroboros.Consensus.Block (BlockProtocol)
 import Ouroboros.Consensus.Protocol (NodeConfig, NodeState)
-import Ouroboros.Consensus.Mempool.Impl (MempoolCapacity (..))
+import Ouroboros.Consensus.Mempool.Impl (MempoolCapacityBytes (..))
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 
@@ -61,8 +61,8 @@ withShelley rr cdb conf state blockchainTime k = do
   k kernel ctable (initiatorNetworkApplication <$> vs) (responderNetworkApplication <$> vs)
 
 versions
-  :: NodeConfig (BlockProtocol ByronBlock) -> NetworkApplication IO ConnectionId Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
-  -> Versions NodeToNodeVersion DictVersion (NetworkApplication IO ConnectionId Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ())
+  :: NodeConfig (BlockProtocol ByronBlock) -> NetworkApplication IO ConnectionId Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
+  -> Versions NodeToNodeVersion DictVersion (NetworkApplication IO ConnectionId Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ())
 versions conf = simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData (nodeNetworkMagic (Proxy @ByronBlock) conf)) (DictVersion nodeToNodeCodecCBORTerm)
 
 mkParams
@@ -80,14 +80,11 @@ mkParams rr cdb nconf nstate blockchainTime = NodeArgs
   , initState = nstate
   , btime = blockchainTime
   , chainDB = cdb
-  , callbacks = NodeCallbacks
-      { produceDRG = drgNew
-      , produceBlock = \_ _ _ _ _ _ -> error "cannot produce blocks, so why do I have to give this?"
-      }
+  , blockProduction = Nothing
   , blockFetchSize = nodeBlockFetchSize
   , blockMatchesHeader = nodeBlockMatchesHeader
   , maxUnackTxs = maxBound
+  , maxBlockBodySize = maxBound
   , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO: make configurable!
-  -- Mempool capacity limited to 200, sourced from the legacy cardano-sl config
-  , mempoolCap = MempoolCapacity 200
+  , mempoolCap = MempoolCapacityBytes 128_000
   }

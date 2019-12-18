@@ -510,9 +510,8 @@ bbsStreamBlocks rr idx db _ hh f yieldFirst k = do
             _ -> error "bbsStreamBlocks: ChainDB reader unexpected instruction"
   where
 
-  acquireReader = ChainDB.newBlockReader db rr
-  -- Reader close is not in master yet.
-  releaseReader _rdr = pure ()
+  acquireReader = ChainDB.deserialiseReader <$> ChainDB.newBlockReader db rr
+  releaseReader = ChainDB.readerClose
 
   conduitFrom rdr blk shouldYield = do
     s <- lift $ f blk
