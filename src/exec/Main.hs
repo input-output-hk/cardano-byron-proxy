@@ -658,7 +658,7 @@ main = do
               slotMs = Cardano.ppSlotDuration (Cardano.gdProtocolParameters (Cardano.configGenesisData newGenesisConfig))
               slotDuration = SlotLength (fromRational (toRational slotMs / 1000))
               systemStart = SystemStart (Cardano.gdStartTime (Cardano.configGenesisData newGenesisConfig))
-          btime <- realBlockchainTime rr slotDuration systemStart
+          btime <- realBlockchainTime rr nullTracer slotDuration systemStart
           withDB dbc dbTracer indexTracer rr btime nodeConfig extLedgerState slotDuration $ \idx cdb -> do
             traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
             let shelleyClientTracer = contramap (\it -> ("shelley.client", defineSeverity (wiaEvent it), fromString (show it))) (Logging.convertTrace' trace)

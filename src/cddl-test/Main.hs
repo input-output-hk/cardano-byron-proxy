@@ -27,6 +27,7 @@ import qualified Ouroboros.Consensus.Ledger.Byron as Byron
 import           Ouroboros.Byron.Proxy.Block (ByronBlock, isEBB)
 
 import           Ouroboros.Storage.Common (EpochSize (..),EpochNo(..))
+import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, ImmDbArgs(..), openDB, getBlob)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..))
 import           Ouroboros.Storage.FS.IO (ioHasFS)
@@ -92,17 +93,20 @@ dbArgs :: FilePath -> IO (ImmDbArgs IO ByronBlock)
 dbArgs fp = do
   epochInfo <- newEpochInfo (const (pure $ EpochSize epochSize))
   return $ ImmDbArgs {
-      immDecodeHash  = Byron.decodeByronHeaderHash
-    , immDecodeBlock = Byron.decodeByronBlock epochSlots
-    , immEncodeHash  = Byron.encodeByronHeaderHash
-    , immEncodeBlock = Byron.encodeByronBlockWithInfo
-    , immHashInfo    = Byron.byronHashInfo
-    , immErr         = EH.exceptions
-    , immEpochInfo   = epochInfo
-    , immValidation  = ValidateMostRecentEpoch
-    , immIsEBB       = isEBB
-    , immHasFS       = ioHasFS $ MountPoint (fp </> "immutable")
-    , immTracer      = nullTracer
+      immDecodeHash     = Byron.decodeByronHeaderHash
+    , immDecodeBlock    = Byron.decodeByronBlock epochSlots
+    , immDecodeHeader   = Byron.decodeByronHeader epochSlots
+    , immEncodeHash     = Byron.encodeByronHeaderHash
+    , immEncodeBlock    = Byron.encodeByronBlockWithInfo
+    , immHashInfo       = Byron.byronHashInfo
+    , immErr            = EH.exceptions
+    , immEpochInfo      = epochInfo
+    , immValidation     = ValidateMostRecentEpoch
+    , immIsEBB          = isEBB
+    , immAddHdrEnv      = Byron.byronAddHeaderEnvelope
+    , immCheckIntegrity = const True -- No validation
+    , immHasFS          = ioHasFS $ MountPoint (fp </> "immutable")
+    , immTracer         = nullTracer
     }
 
 data ReadResult = Block ByteString | FutureEpoch | NoData
@@ -110,9 +114,9 @@ data ReadResult = Block ByteString | FutureEpoch | NoData
 
 readBlock :: ImmDB IO ByronBlock -> EpochNo -> IO ReadResult
 readBlock db epoch = do
-    ret <- try $ getBlob db $ Left epoch
+    ret <- try $ getBlob db ChainDB.Block $ Left epoch
     case ret of
         (Left (UserError (ReadFutureEBBError _ _) _)) -> return FutureEpoch
         (Left err) -> throwIO err
         (Right Nothing) -> return NoData
-        (Right (Just block)) -> return $ Block block
+        (Right (Just (_hash, block))) -> return $ Block block

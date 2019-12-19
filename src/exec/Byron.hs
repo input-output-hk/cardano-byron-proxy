@@ -40,7 +40,7 @@ import Ouroboros.Byron.Proxy.Main
 import Ouroboros.Consensus.Block (Header)
 import Ouroboros.Consensus.Ledger.Byron (ByronHash(..),
          byronHeaderRaw, mkByronBlock)
-import Ouroboros.Consensus.Ledger.Byron.Aux as Cardano
+import Ouroboros.Consensus.Ledger.Byron.Auxiliary as Cardano
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (maxRollbacks))
 import Ouroboros.Network.Block (ChainHash (..), Point, pointHash)
 import qualified Ouroboros.Network.AnchoredFragment as AF
