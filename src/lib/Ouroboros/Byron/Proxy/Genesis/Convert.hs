@@ -117,7 +117,6 @@ convertTestnetBalanceOptions tbo = Cardano.TestnetBalanceOptions
   -- Cardano uses a LovelacePortion, or Word64, the numerator over the
   -- maximum lovelace value 1e15.
   , Cardano.tboRichmenShare = either (error . show) id (Cardano.lovelacePortionFromDouble (CSL.tboRichmenShare tbo))
-  , Cardano.tboUseHDAddresses = CSL.tboUseHDAddresses tbo
   }
 
 convertFakeAvvmOptions :: CSL.FakeAvvmOptions -> Cardano.FakeAvvmOptions

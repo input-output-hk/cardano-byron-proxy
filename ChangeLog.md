@@ -1,5 +1,10 @@
 # Revision history for cardano-byron-proxy
 
+## 1.0.2 -- December 2019
+
+* Update to latest version of cardano-ledger, ouroboros-network,
+  ouroboros-consensus, iohk-monitoring-framework, and cardano-shell libs.
+
 ## 1.0.1 -- December 2019
 
 * Update to latest version of ouroboros-network and ouroboros-consensus libs.
