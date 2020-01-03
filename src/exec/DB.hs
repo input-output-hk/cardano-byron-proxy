@@ -24,7 +24,7 @@ import           Ouroboros.Consensus.BlockchainTime        (BlockchainTime,
                                                             SlotLength)
 import           Ouroboros.Consensus.Ledger.Byron.Config   (pbftEpochSlots)
 import           Ouroboros.Consensus.Ledger.Extended       (ExtLedgerState)
-import           Ouroboros.Consensus.Node                  (initChainDB)
+import qualified Ouroboros.Consensus.Node                  as Node
 import           Ouroboros.Consensus.Protocol              (NodeConfig,
                                                             pbftExtConfig)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
@@ -54,15 +54,14 @@ withDB
   -> BlockchainTime IO
   -> NodeConfig (BlockProtocol ByronBlock)
   -> ExtLedgerState ByronBlock
-  -> SlotLength
   -> (Index IO (Header ByronBlock) -> ChainDB IO ByronBlock -> IO t)
   -> IO t
-withDB dbOptions dbTracer indexTracer rr btime nodeConfig extLedgerState slotDuration k = do
+withDB dbOptions dbTracer indexTracer rr btime nodeConfig extLedgerState k = do
   -- The ChainDB/Storage layer will not create a directory for us, we have
   -- to ensure it exists.
   System.Directory.createDirectoryIfMissing True (dbFilePath dbOptions)
 
-  bracket openChainDB ChainDB.closeDB $ \cdb ->
+  withChainDB $ \cdb ->
     Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx -> do
       _ <- ResourceRegistry.forkLinkedThread rr $ Index.trackChainDB rr idx cdb
       k idx cdb
@@ -72,15 +71,14 @@ withDB dbOptions dbTracer indexTracer rr btime nodeConfig extLedgerState slotDur
   epochSlots :: Cardano.EpochSlots
   epochSlots = pbftEpochSlots $ pbftExtConfig nodeConfig
 
-  openChainDB :: IO (ChainDB IO ByronBlock)
-  openChainDB = initChainDB
+  withChainDB :: (ChainDB IO ByronBlock -> IO a) -> IO a
+  withChainDB = Node.withChainDB
     dbTracer
     rr
     btime
     (dbFilePath dbOptions)
     nodeConfig
     extLedgerState
-    slotDuration
     customiseArgs
 
   customiseArgs :: ChainDbArgs IO ByronBlock -> ChainDbArgs IO ByronBlock
