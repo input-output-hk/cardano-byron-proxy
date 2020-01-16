@@ -22,7 +22,7 @@ extra-deps:
       - slotting
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: a773ba71eb9a6fb91dda2cdf6c41b2280f2acf7d
+    commit: b3c8c599e96339d41c5058fbd8af8ca6bf32145e
     subdirs:
       - cardano-ledger
       - crypto
