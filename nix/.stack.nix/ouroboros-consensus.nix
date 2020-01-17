@@ -1,6 +1,6 @@
 { system, compiler, flags, pkgs, hsPkgs, pkgconfPkgs, ... }:
   {
-    flags = {};
+    flags = { asserts = false; };
     package = {
       specVersion = "1.10";
       identifier = { name = "ouroboros-consensus"; version = "0.1.0.0"; };
@@ -49,6 +49,7 @@
           (hsPkgs.mmorph)
           (hsPkgs.mtl)
           (hsPkgs.network)
+          (hsPkgs.psqueues)
           (hsPkgs.serialise)
           (hsPkgs.stm)
           (hsPkgs.streaming)
@@ -190,8 +191,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/ouroboros-network";
-      rev = "a7b3055c1a4ccc26455939910a6283d8947c108e";
-      sha256 = "0dzjp3zjnks6aipc0ps8qwqay1nl2s738lmr5pfscmwmf500hrnc";
+      rev = "ac6ac3f302c800f397a59d91bbfb29477379f0c2";
+      sha256 = "0yx7j91p60pzqmgf8hflgv1rfzpdv3mv2jy11yw60yhbfn1l86bx";
       });
     postUnpack = "sourceRoot+=/ouroboros-consensus; echo source root reset to \$sourceRoot";
     }
