@@ -67,7 +67,7 @@ import qualified Pos.Util.Trace
 import qualified Pos.Util.Wlog as Wlog
 
 import Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput (..))
-import Network.Mux.Types (MuxError (..), MuxErrorType (..))
+import Network.Mux.Trace (MuxError (..), MuxErrorType (..))
 
 import Ouroboros.Byron.Proxy.Block (ByronBlock)
 import Ouroboros.Byron.Proxy.Index.Types (Index)
@@ -75,7 +75,11 @@ import qualified Ouroboros.Byron.Proxy.Index.Sqlite as Index (TraceEvent)
 import Ouroboros.Byron.Proxy.Genesis.Convert
 import Ouroboros.Byron.Proxy.Main
 import Ouroboros.Consensus.Block (GetHeader (Header))
-import Ouroboros.Consensus.BlockchainTime (SlotLength (..), SystemStart (..), realBlockchainTime)
+import Ouroboros.Consensus.BlockchainTime (SlotLength (..),
+                                           SystemStart (..),
+                                           focusSlotLengths,
+                                           realBlockchainTime,
+                                           singletonSlotLengths)
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..), protocolSecurityParam)
 import Ouroboros.Consensus.Mempool.API (Mempool)
 import Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
@@ -658,8 +662,8 @@ main = do
               slotMs = Cardano.ppSlotDuration (Cardano.gdProtocolParameters (Cardano.configGenesisData newGenesisConfig))
               slotDuration = SlotLength (fromRational (toRational slotMs / 1000))
               systemStart = SystemStart (Cardano.gdStartTime (Cardano.configGenesisData newGenesisConfig))
-          btime <- realBlockchainTime rr nullTracer slotDuration systemStart
-          withDB dbc dbTracer indexTracer rr btime nodeConfig extLedgerState slotDuration $ \idx cdb -> do
+          btime <- realBlockchainTime rr nullTracer systemStart $ focusSlotLengths $ singletonSlotLengths slotDuration
+          withDB dbc dbTracer indexTracer rr btime nodeConfig extLedgerState $ \idx cdb -> do
             traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
             let shelleyClientTracer = contramap (\it -> ("shelley.client", defineSeverity (wiaEvent it), fromString (show it))) (Logging.convertTrace' trace)
                 shelleyServerTracer = contramap (\it -> ("shelley.server", defineSeverity (wiaEvent it), fromString (show it))) (Logging.convertTrace' trace)

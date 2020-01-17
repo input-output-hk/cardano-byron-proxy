@@ -7,7 +7,6 @@ module DB
   , withDB
   ) where
 
-import           Control.Exception                         (bracket)
 import           Control.Tracer                            (Tracer)
 import           Data.Time.Clock                           (secondsToDiffTime)
 import qualified System.Directory                          (createDirectoryIfMissing)
@@ -20,17 +19,15 @@ import qualified Ouroboros.Byron.Proxy.Index.Sqlite        as Sqlite
 import           Ouroboros.Byron.Proxy.Index.Types         (Index)
 import           Ouroboros.Consensus.Block                 (BlockProtocol,
                                                             GetHeader (Header))
-import           Ouroboros.Consensus.BlockchainTime        (BlockchainTime,
-                                                            SlotLength)
+import           Ouroboros.Consensus.BlockchainTime        (BlockchainTime)
 import           Ouroboros.Consensus.Ledger.Byron.Config   (pbftEpochSlots)
 import           Ouroboros.Consensus.Ledger.Extended       (ExtLedgerState)
-import           Ouroboros.Consensus.Node                  (initChainDB)
+import           Ouroboros.Consensus.Node                  (withChainDB)
 import           Ouroboros.Consensus.Protocol              (NodeConfig,
                                                             pbftExtConfig)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 import           Ouroboros.Storage.ChainDB.API             (ChainDB)
-import qualified Ouroboros.Storage.ChainDB.API             as ChainDB
 import qualified Ouroboros.Storage.ChainDB.Impl            as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl.Args       (ChainDbArgs (..))
 import           Ouroboros.Storage.LedgerDB.DiskPolicy     (DiskPolicy (..))
@@ -54,34 +51,23 @@ withDB
   -> BlockchainTime IO
   -> NodeConfig (BlockProtocol ByronBlock)
   -> ExtLedgerState ByronBlock
-  -> SlotLength
   -> (Index IO (Header ByronBlock) -> ChainDB IO ByronBlock -> IO t)
   -> IO t
-withDB dbOptions dbTracer indexTracer rr btime nodeConfig extLedgerState slotDuration k = do
+withDB dbOptions dbTracer indexTracer rr btime nodeConfig extLedgerState k = do
   -- The ChainDB/Storage layer will not create a directory for us, we have
   -- to ensure it exists.
   System.Directory.createDirectoryIfMissing True (dbFilePath dbOptions)
 
-  bracket openChainDB ChainDB.closeDB $ \cdb ->
-    Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx -> do
-      _ <- ResourceRegistry.forkLinkedThread rr $ Index.trackChainDB rr idx cdb
-      k idx cdb
+  withChainDB dbTracer rr btime (dbFilePath dbOptions) nodeConfig extLedgerState customiseArgs
+    $ \cdb ->
+      Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx -> do
+        _ <- ResourceRegistry.forkLinkedThread rr $ Index.trackChainDB rr idx cdb
+        k idx cdb
 
   where
 
   epochSlots :: Cardano.EpochSlots
   epochSlots = pbftEpochSlots $ pbftExtConfig nodeConfig
-
-  openChainDB :: IO (ChainDB IO ByronBlock)
-  openChainDB = initChainDB
-    dbTracer
-    rr
-    btime
-    (dbFilePath dbOptions)
-    nodeConfig
-    extLedgerState
-    slotDuration
-    customiseArgs
 
   customiseArgs :: ChainDbArgs IO ByronBlock -> ChainDbArgs IO ByronBlock
   customiseArgs args = args
