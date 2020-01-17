@@ -84,7 +84,7 @@ mkParams rr cdb nconf nstate blockchainTime = NodeArgs
   , blockFetchSize = nodeBlockFetchSize
   , blockMatchesHeader = nodeBlockMatchesHeader
   , maxUnackTxs = maxBound
-  , maxBlockBodySize = maxBound
+  , maxBlockSize = MaxBlockBodySize maxBound
   , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO: make configurable!
   , mempoolCap = MempoolCapacityBytes 128_000
   }
