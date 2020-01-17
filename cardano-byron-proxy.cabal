@@ -1,5 +1,5 @@
 name:                cardano-byron-proxy
-version:             1.0.2
+version:             1.0.3
 synopsis:            Adapter for the Byron net
 -- description:
 homepage:            https://github.com/input-output-hk/cardano-byron-proxy
