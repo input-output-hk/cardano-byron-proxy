@@ -22,7 +22,6 @@ import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
 import Data.Maybe (mapMaybe)
 import qualified Data.Text.Lazy.Builder as Text
-import Data.Word (Word64)
 import System.Random (StdGen, getStdGen, randomR)
 
 import qualified Cardano.Binary as Binary
@@ -34,14 +33,14 @@ import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), GenesisBlock,
                                          MainBlockHeader, HeaderHash, headerHash)
 import qualified Pos.Infra.Diffusion.Types as CSL
 
-import Ouroboros.Byron.Proxy.Block (ByronBlock,
+import Ouroboros.Byron.Proxy.Block (ByronBlock, checkpointOffsets,
          coerceHashToLegacy, headerHash)
 import Ouroboros.Byron.Proxy.Main
 import Ouroboros.Consensus.Block (Header)
 import Ouroboros.Consensus.Ledger.Byron (ByronHash(..),
          byronHeaderRaw, mkByronBlock)
 import Ouroboros.Consensus.Ledger.Byron.Auxiliary as Cardano
-import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (maxRollbacks))
+import Ouroboros.Consensus.Protocol.Abstract (SecurityParam)
 import Ouroboros.Network.Block (ChainHash (..), Point, pointHash)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.ChainFragment as CF
@@ -136,24 +135,13 @@ download tracer genesisBlock epochSlots securityParam db bp = do
   checkpoints
     :: AF.AnchoredFragment (Header ByronBlock)
     -> [CSL.HeaderHash]
-  checkpoints = mapMaybe pointToHash . AF.selectPoints (fmap fromIntegral offsets)
+  checkpoints = mapMaybe pointToHash .
+    AF.selectPoints (fmap fromIntegral (checkpointOffsets securityParam))
 
   pointToHash :: Point (Header ByronBlock) -> Maybe CSL.HeaderHash
   pointToHash pnt = case pointHash pnt of
     GenesisHash                -> Nothing
     BlockHash (ByronHash hash) -> Just $ coerceHashToLegacy hash
-
-  -- Offsets for selectPoints. Defined in the same way as for the Shelley
-  -- chain sync client: fibonacci numbers including 0 and k.
-  offsets :: [Word64]
-  offsets = 0 : foldr includeK ([] {- this is never forced -}) (tail fibs)
-
-  includeK :: Word64 -> [Word64] -> [Word64]
-  includeK w ws | w >= k    = [k]
-                | otherwise = w : ws
-
-  fibs :: [Word64]
-  fibs = 1 : 1 : zipWith (+) fibs (tail fibs)
 
   streamer :: CSL.HeaderHash -> CSL.StreamBlocks CSL.Block IO CSL.HeaderHash
   streamer tipHash = CSL.StreamBlocks
@@ -187,9 +175,6 @@ download tracer genesisBlock epochSlots securityParam db bp = do
   pickRandom rndGen ne =
     let (idx, rndGen') = randomR (0, NE.length ne - 1) rndGen
     in  (ne NE.!! idx, rndGen')
-
-  k :: Word64
-  k = maxRollbacks securityParam
 
 recodeBlockOrFail
   :: Cardano.EpochSlots

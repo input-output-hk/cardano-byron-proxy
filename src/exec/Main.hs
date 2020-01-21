@@ -55,7 +55,6 @@ import qualified Pos.Infra.Network.CLI as CSL (NetworkConfigOpts (..),
                                                launchStaticConfigMonitoring,
                                                listenNetworkAddressOption)
 import Pos.Infra.Network.Types (NetworkConfig (..))
-import qualified Pos.Infra.Network.Policy as Policy
 import qualified Pos.Launcher.Configuration as CSL (Configuration (..),
                                                     ConfigurationOptions (..))
 import qualified Pos.Client.CLI.Options as CSL (configurationOptionsParser)
@@ -491,17 +490,13 @@ runByron tracer byronOptions genesisConfig blockConfig updateConfig nodeConfig e
     networkConfig <- CSL.intNetworkConfigOpts
       (Trace.named cslTrace)
       (boNetworkOptions byronOptions)
-    let networkConfig' = networkConfig
-          { ncEnqueuePolicy = Policy.defaultEnqueuePolicyRelay
-          , ncDequeuePolicy = Policy.defaultDequeuePolicyRelay
-          }
-        bpc :: ByronProxyConfig
+    let bpc :: ByronProxyConfig
         bpc = configFromCSLConfigs
                 genesisConfig
                 blockConfig
                 updateConfig
                 nodeConfig
-                networkConfig'
+                networkConfig
                 64 -- Batch size.
                 trace
         genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)

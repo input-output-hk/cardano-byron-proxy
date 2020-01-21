@@ -19,9 +19,11 @@ module Ouroboros.Byron.Proxy.Block
   , coerceHashToLegacy
   , headerHash
   , isEBB
+  , checkpointOffsets
   ) where
 
 import qualified Codec.CBOR.Write as CBOR (toStrictByteString)
+import Data.Word (Word64)
 
 import qualified Pos.Chain.Block as CSL (HeaderHash)
 import qualified Pos.Crypto.Hashing as Legacy (AbstractHash (..))
@@ -31,8 +33,9 @@ import qualified Cardano.Chain.Block as Cardano
 import Cardano.Crypto.Hashing (AbstractHash (..))
 
 import qualified Ouroboros.Consensus.Block as Consensus (GetHeader (..))
-import Ouroboros.Consensus.Ledger.Byron (ByronBlock (..), ByronHash (..),
-         encodeByronBlock, byronHeaderHash)
+import Ouroboros.Consensus.Ledger.Byron (ByronBlock (..),
+         ByronHash (..), encodeByronBlock, byronHeaderHash)
+import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import Ouroboros.Storage.Common (EpochNo(..))
 
 -- For type instance HeaderHash (Header blk) = HeaderHash blk
@@ -60,11 +63,23 @@ headerHash = unByronHash . byronHeaderHash
 
 -- | Return @Just@ the epoch number if the block is an EBB, @Nothing@ for
 -- regular blocks
-isEBB :: ByronBlock -> Maybe EpochNo
+isEBB :: ByronBlock -> Maybe (EpochNo, ByronHash)
 isEBB blk = case byronBlockRaw blk of
     Cardano.ABOBBlock _      -> Nothing
-    Cardano.ABOBBoundary ebb -> Just
-                              . EpochNo
-                              . Cardano.boundaryEpoch
-                              . Cardano.boundaryHeader
-                              $ ebb
+    Cardano.ABOBBoundary ebb -> Just (epochNo, byronHash)
+      where
+      epochNo = EpochNo . Cardano.boundaryEpoch . Cardano.boundaryHeader $ ebb
+      byronHash = ByronHash . headerHash . Consensus.getHeader $ blk
+
+-- | Compute the offsets for use by ChainFragment.selectPoints or
+-- AnchoredFragment.selectPoints for some security parameter k. It uses
+-- fibonacci numbers with 0 and k as endpoints, and the duplicate 1 at the
+-- start removed.
+checkpointOffsets :: SecurityParam -> [Word64]
+checkpointOffsets (SecurityParam k) = 0 : foldr includeK ([] {- this is never forced -}) (tail fibs)
+  where
+    includeK :: Word64 -> [Word64] -> [Word64]
+    includeK w ws | w >= k    = [k]
+                  | otherwise = w : ws
+    fibs :: [Word64]
+    fibs = 1 : 1 : zipWith (+) fibs (tail fibs)
