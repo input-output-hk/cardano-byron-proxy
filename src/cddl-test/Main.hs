@@ -24,6 +24,7 @@ import           Control.Tracer (nullTracer)
 import qualified Cardano.Crypto as Cardano (ProtocolMagicId)
 import qualified Cardano.Chain.Slotting as Cardano (EpochSlots (..))
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
+import           Ouroboros.Consensus.Util.ResourceRegistry (unsafeNewRegistry)
 import           Ouroboros.Byron.Proxy.Block (ByronBlock, isEBB)
 
 import           Ouroboros.Storage.Common (EpochSize (..),EpochNo(..))
@@ -33,6 +34,7 @@ import           Ouroboros.Storage.FS.API.Types (MountPoint (..))
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.EpochInfo.Impl (newEpochInfo)
 import           Ouroboros.Storage.ImmutableDB.Types (ImmutableDBError(..), ValidationPolicy(..), UserError (..))
+import           Ouroboros.Storage.ImmutableDB.Impl.Index.Cache (CacheConfig (..))
 import qualified Ouroboros.Storage.Util.ErrorHandling as EH (exceptions)
 
 -- hard coded values
@@ -92,6 +94,7 @@ validateCBOR cddlCmd cddlSpec bytes = do
 dbArgs :: FilePath -> IO (ImmDbArgs IO ByronBlock)
 dbArgs fp = do
   epochInfo <- newEpochInfo (const (pure $ EpochSize epochSize))
+  rr <- unsafeNewRegistry
   return $ ImmDbArgs {
       immDecodeHash     = Byron.decodeByronHeaderHash
     , immDecodeBlock    = Byron.decodeByronBlock epochSlots
@@ -107,6 +110,11 @@ dbArgs fp = do
     , immCheckIntegrity = const True -- No validation
     , immHasFS          = ioHasFS $ MountPoint (fp </> "immutable")
     , immTracer         = nullTracer
+    , immCacheConfig    = CacheConfig
+        { pastEpochsToCache = 1
+        , expireUnusedAfter = 42
+        }
+    , immRegistry       = rr
     }
 
 data ReadResult = Block ByteString | FutureEpoch | NoData
