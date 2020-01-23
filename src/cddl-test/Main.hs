@@ -11,7 +11,6 @@ where
 import           Prelude hiding ((<>))
 import           System.Environment (getArgs)
 import           System.Exit (ExitCode(..))
-import           System.FilePath ((</>))
 import           System.Process.ByteString.Lazy (readProcessWithExitCode)
 
 import           Control.Exception (throwIO, try)
@@ -20,20 +19,17 @@ import           Data.Word (Word64)
 import           Data.ByteString.Lazy (ByteString)
 import           Data.ByteString.Lazy.Char8 as Char8 (unpack)
 
-import           Control.Tracer (nullTracer)
 import qualified Cardano.Crypto as Cardano (ProtocolMagicId)
 import qualified Cardano.Chain.Slotting as Cardano (EpochSlots (..))
 import qualified Ouroboros.Consensus.Ledger.Byron as Byron
+import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry, withRegistry)
 import           Ouroboros.Byron.Proxy.Block (ByronBlock, isEBB)
 
 import           Ouroboros.Storage.Common (EpochSize (..),EpochNo(..))
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
-import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, ImmDbArgs(..), openDB, getBlob)
-import           Ouroboros.Storage.FS.API.Types (MountPoint (..))
-import           Ouroboros.Storage.FS.IO (ioHasFS)
+import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, ImmDbArgs(..), defaultArgs, getBlob, withImmDB)
 import           Ouroboros.Storage.EpochInfo.Impl (newEpochInfo)
 import           Ouroboros.Storage.ImmutableDB.Types (ImmutableDBError(..), ValidationPolicy(..), UserError (..))
-import qualified Ouroboros.Storage.Util.ErrorHandling as EH (exceptions)
 
 -- hard coded values
 epochSize :: Word64
@@ -60,9 +56,9 @@ main = do
                ]
 
 testBlocks :: FilePath -> FilePath -> FilePath -> Maybe [EpochNo] -> IO ()
-testBlocks cddlCmd cddlSpec chainDBPath range = do
-    db <- dbArgs chainDBPath >>= openDB
-    loop db blockList
+testBlocks cddlCmd cddlSpec chainDBPath range = withRegistry $ \registry -> do
+    args <- dbArgs registry chainDBPath
+    withImmDB args $ \db -> loop db blockList
     where
         (isLimitedRange, blockList) = case range of
             Nothing -> (False , [EpochNo 0 ..])
@@ -89,24 +85,22 @@ validateCBOR cddlCmd cddlSpec bytes = do
         (ExitFailure _, _, err) -> error $ Char8.unpack err
         (ExitSuccess, _, _) -> return ()
 
-dbArgs :: FilePath -> IO (ImmDbArgs IO ByronBlock)
-dbArgs fp = do
+dbArgs :: ResourceRegistry IO -> FilePath -> IO (ImmDbArgs IO ByronBlock)
+dbArgs registry fp = do
   epochInfo <- newEpochInfo (const (pure $ EpochSize epochSize))
-  return $ ImmDbArgs {
+  return (defaultArgs fp) {
       immDecodeHash     = Byron.decodeByronHeaderHash
     , immDecodeBlock    = Byron.decodeByronBlock epochSlots
     , immDecodeHeader   = Byron.decodeByronHeader epochSlots
     , immEncodeHash     = Byron.encodeByronHeaderHash
     , immEncodeBlock    = Byron.encodeByronBlockWithInfo
     , immHashInfo       = Byron.byronHashInfo
-    , immErr            = EH.exceptions
     , immEpochInfo      = epochInfo
     , immValidation     = ValidateMostRecentEpoch
     , immIsEBB          = isEBB
     , immAddHdrEnv      = Byron.byronAddHeaderEnvelope
     , immCheckIntegrity = const True -- No validation
-    , immHasFS          = ioHasFS $ MountPoint (fp </> "immutable")
-    , immTracer         = nullTracer
+    , immRegistry       = registry
     }
 
 data ReadResult = Block ByteString | FutureEpoch | NoData

@@ -145,8 +145,6 @@ executable cddl-test
                        cardano-crypto-wrapper,
                        cardano-ledger,
                        cborg,
-                       contra-tracer,
-                       filepath,
                        ouroboros-consensus,
                        process-extras
   ghc-options:         -threaded

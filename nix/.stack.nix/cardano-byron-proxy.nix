@@ -113,8 +113,6 @@
             (hsPkgs.cardano-crypto-wrapper)
             (hsPkgs.cardano-ledger)
             (hsPkgs.cborg)
-            (hsPkgs.contra-tracer)
-            (hsPkgs.filepath)
             (hsPkgs.ouroboros-consensus)
             (hsPkgs.process-extras)
             ];
