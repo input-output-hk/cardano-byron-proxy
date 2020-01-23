@@ -20,7 +20,6 @@ import qualified Data.ByteString.Lazy as Lazy (fromStrict)
 import Data.Foldable (foldlM)
 import Data.List.NonEmpty (NonEmpty)
 import qualified Data.List.NonEmpty as NE
-import Data.Maybe (mapMaybe)
 import qualified Data.Text.Lazy.Builder as Text
 import Data.Word (Word64)
 import System.Random (StdGen, getStdGen, randomR)
@@ -67,15 +66,15 @@ download
   -> ByronProxy
   -> IO void
 download tracer genesisBlock epochSlots securityParam db bp = do
+    traceWith tracer "Seeding database with genesis"
+    genesisBlock' :: ByronBlock <- recodeBlockOrFail epochSlots throwIO (Left genesisBlock)
+    -- When the ChainDB already contains the genesis block, this is a no-op
+    ChainDB.addBlock db genesisBlock'
     gen <- getStdGen
     mTip <- ChainDB.getTipHeader db
-    tipHash <- case mTip of
-      Nothing -> do
-        traceWith tracer "Seeding database with genesis"
-        genesisBlock' :: ByronBlock <- recodeBlockOrFail epochSlots throwIO (Left genesisBlock)
-        ChainDB.addBlock db genesisBlock'
-        pure $ CSL.headerHash genesisBlock
-      Just header -> pure $ coerceHashToLegacy (headerHash header)
+    let tipHash = case mTip of
+          Nothing     -> error "empty ChainDB after adding Genesis block"
+          Just header -> coerceHashToLegacy (headerHash header)
     mainLoop gen tipHash
 
   where
@@ -136,12 +135,12 @@ download tracer genesisBlock epochSlots securityParam db bp = do
   checkpoints
     :: AF.AnchoredFragment (Header ByronBlock)
     -> [CSL.HeaderHash]
-  checkpoints = mapMaybe pointToHash . AF.selectPoints (fmap fromIntegral offsets)
+  checkpoints = map pointToHash . AF.selectPoints (fmap fromIntegral offsets)
 
-  pointToHash :: Point (Header ByronBlock) -> Maybe CSL.HeaderHash
+  pointToHash :: Point (Header ByronBlock) -> CSL.HeaderHash
   pointToHash pnt = case pointHash pnt of
-    GenesisHash                -> Nothing
-    BlockHash (ByronHash hash) -> Just $ coerceHashToLegacy hash
+    GenesisHash                -> CSL.headerHash genesisBlock
+    BlockHash (ByronHash hash) -> coerceHashToLegacy hash
 
   -- Offsets for selectPoints. Defined in the same way as for the Shelley
   -- chain sync client: fibonacci numbers including 0 and k.
