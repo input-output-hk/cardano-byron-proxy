@@ -6,7 +6,7 @@ packages:
 extra-deps:
 
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: 15e7df23462d4840d4ad04e8c33d6a65041c4857
+    commit: dbd932704fa4520bc24e45b2c00407c5f437c12a
     subdirs:
       - iohk-monitoring
       - contra-tracer
@@ -14,7 +14,7 @@ extra-deps:
       - tracer-transformers
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 0fcb3a306e96ce36fca75d62792c55ab1de871ea
+    commit: 80deee31f8d9422b8e090e55b17e1a714153180b
     subdirs:
       - binary
       - binary/test
@@ -22,7 +22,7 @@ extra-deps:
       - slotting
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 3f4cc020d452e0af4b42208fe4a8cea8f1d710b5
+    commit: a773ba71eb9a6fb91dda2cdf6c41b2280f2acf7d
     subdirs:
       - cardano-ledger
       - crypto
@@ -42,7 +42,7 @@ extra-deps:
     commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: ac6ac3f302c800f397a59d91bbfb29477379f0c2
+    commit: 408f3a3fc8be601075ee2bacdb7b7b9ebac9d2c2
     subdirs:
       - ouroboros-consensus
       - ouroboros-network
@@ -71,7 +71,7 @@ extra-deps:
 
   # The parts of cardano-sl that are needed for the byron proxy.
   - git: https://github.com/input-output-hk/cardano-sl
-    commit: f778004a2d9940567732528ab9d0229d0d4984e2
+    commit: 37d38f71c36bec13ddf8c664c567d7ae122f5923
     subdirs:
       - lib
       - binary
@@ -103,7 +103,7 @@ extra-deps:
     commit: 018a50b9042c2115c3ec9c9fd5ca5f28737dd29c
 
   - git: https://github.com/avieth/network-transport-tcp
-    commit: 46f2942423d9ad3c81040565a9e9d5b9e08ddcc4
+    commit: 984386467466d89621eda1cff8bbb435a9b9c0ef
 
   - git: https://github.com/input-output-hk/universum
     commit: 15f7db758ff5a24b874de2247f6f7a4576562da5
@@ -125,6 +125,22 @@ extra-deps:
   - o-clock-1.0.0.1
   - ekg-wai-0.1.0.3
   - lzma-clib-5.2.2
+
+  - network-3.1.0.1
+  - systemd-2.0.0
+  - socks-0.6.0
+  - connection-0.3.0
+  - snap-server-1.1.1.1
+  - swagger2-2.4
+  # Needed by swagger2 version (InsOrd module)
+  - insert-ordered-containers-0.2.2
+  # Neede because of swagger2
+  - servant-swagger-1.1.7.1
+  # Needed because of servant-swagger
+  - servant-0.15
+  - servant-client-0.15
+  - servant-client-core-0.15
+  - servant-server-0.15
 
 ghc-options:
   cardano-byron-proxy:     -Wall -Werror -Wcompat -fwarn-redundant-constraints -fwarn-incomplete-patterns -fwarn-unused-imports -Wincomplete-record-updates -Wincomplete-uni-patterns

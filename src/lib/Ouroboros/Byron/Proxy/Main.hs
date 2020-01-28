@@ -108,8 +108,6 @@ import           Pos.DB.Class                              (SerializedBlock)
 import           Pos.Diffusion.Full                        (FullDiffusionConfiguration (..),
                                                             diffusionLayerFull)
 import           Pos.Infra.Diffusion.Types
--- An ancient relic. Needed for the network configuration type.
-import           Pos.Infra.DHT.Real.Param                  (KademliaParams)
 import           Pos.Infra.Network.Types                   (NetworkConfig (..))
 import           Pos.Logic.Types                           hiding (streamBlocks)
 import qualified Pos.Logic.Types                           as Logic
@@ -163,7 +161,7 @@ data ByronProxyConfig = ByronProxyConfig
   , bpcEpochSlots        :: !EpochSlots
     -- | Byron network configuration. To get one, consider using
     -- Pos.Infra.Network.CLI.intNetworkConfigOpts
-  , bpcNetworkConfig     :: !(NetworkConfig KademliaParams)
+  , bpcNetworkConfig     :: !(NetworkConfig ())
     -- | Configuration for the Byron Diffusion layer (i.e. the network part).
   , bpcDiffusionConfig   :: !FullDiffusionConfiguration
   }
@@ -176,7 +174,7 @@ configFromCSLConfigs
   -> CSL.BlockConfiguration
   -> CSL.UpdateConfiguration
   -> CSL.NodeConfiguration
-  -> NetworkConfig KademliaParams
+  -> NetworkConfig ()
   -> Word32 -- ^ Batch size for block streaming.
   -> Trace IO (LogNamed (Wlog.Severity, Text))
   -> ByronProxyConfig
