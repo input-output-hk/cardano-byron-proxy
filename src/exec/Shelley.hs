@@ -80,6 +80,9 @@ mkParams rr cdb nconf nstate blockchainTime = NodeArgs
   , initState = nstate
   , btime = blockchainTime
   , chainDB = cdb
+    -- Don't automatically add a dummy genesis EBB, we'll add the real one
+    -- later on
+  , initChainDB = \_cfg _cdb -> return ()
   , blockProduction = Nothing
   , blockFetchSize = nodeBlockFetchSize
   , blockMatchesHeader = nodeBlockMatchesHeader
