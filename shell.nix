@@ -23,5 +23,4 @@ let
       "
     '';
   };
-# TODO: switch back to default.nix shell when it works
 in default.shell // { inherit devops; }

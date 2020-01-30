@@ -19,12 +19,7 @@ let
         hasPrefix (toString origSrc + toString dir) path;
     } + dir;
 
-  recRecurseIntoAttrs = with pkgs; pred: x: if pred x then recurseIntoAttrs (lib.mapAttrs (n: v: if n == "buildPackages" then v else recRecurseIntoAttrs pred v) x) else x;
-  pkgSet = recRecurseIntoAttrs (x: with pkgs; lib.isAttrs x && !lib.isDerivation x)
-    # we are only intersted in listing the project packages
-    (pkgs.lib.filterAttrs (with pkgs.haskell-nix.haskellLib; (n: p: p != null && (isLocalPackage p && isProjectPackage p) || n == "shellFor"))
-      # from our project which is based on a cabal project.
-      (pkgs.haskell-nix.cabalProject {
+ in pkgs.haskell-nix.cabalProject {
           src = pkgs.haskell-nix.haskellLib.cleanGit { inherit src; };
           ghc = pkgs.haskell-nix.compiler.${haskellCompiler};
 
@@ -45,5 +40,4 @@ let
         packages.prometheus.components.library.doExactConfig = true;
       }
     ];
-      }));
- in pkgSet
+  }

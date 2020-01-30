@@ -6,6 +6,7 @@
 , customConfig ? {}
 , interactive ? false
 , gitrev ? commonLib.iohkNix.commitIdFromGitRepoOrZero ./.git
+, withHoogle ? true
 }:
 
 let
@@ -19,8 +20,17 @@ let
   };
   # NixOS tests run a proxy and validate it listens
   nixosTests = import ./nix/nixos/tests { inherit (commonLib) pkgs; };
+
+  recRecurseIntoAttrs = with pkgs; pred: x: if pred x then recurseIntoAttrs (lib.mapAttrs (n: v: if n == "buildPackages" then v else recRecurseIntoAttrs pred v) x) else x;
+  projectPkgSet = recRecurseIntoAttrs (x: with pkgs; lib.isAttrs x && !lib.isDerivation x)
+    # we are only intersted in listing the project packages
+    (pkgs.lib.filterAttrs (n: p: p != null && (pkgs.haskell-nix.haskellLib.selectProjectPackages p))
+      # from our project which is based on a cabal project.
+      haskellPackages);
+
   self = with commonLib; {
-    inherit scripts nixosTests environments cardano-byron-proxy haskellPackages;
+    inherit scripts nixosTests environments cardano-byron-proxy;
+    haskellPackages = projectPkgSet;
     inherit (iohkNix) check-hydra;
 
     # `tests` are the test suites which have been built.
@@ -31,10 +41,6 @@ let
     benchmarks = collectComponents "benchmarks" isCardanoNode haskellPackages;
 
     shell = haskellPackages.shellFor {
-
-      packages = ps: with ps; [
-        haskellPackages.cardano-byron-proxy
-      ];
 
       # Builds a Hoogle documentation index of all dependencies,
       # and provides a "hoogle" command to search the index.
