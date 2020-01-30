@@ -264,14 +264,6 @@ cliParser = ByronProxyOptions
               , Opt.metavar "FILEPATH"
               , Opt.help "Path to a YAML file containing the network topology"
               ]
-      ncoKademlia <-
-          Opt.optional $ Opt.strOption $
-          mconcat
-              [ Opt.long "kademlia"
-              , Opt.metavar "FILEPATH"
-              , Opt.help
-                    "Path to a YAML file containing the kademlia configuration"
-              ]
       ncoSelf <-
           Opt.optional $ Opt.option (fromString <$> Opt.str) $
           mconcat
@@ -305,7 +297,6 @@ cliParser = ByronProxyOptions
       ncoBindAddress <- Opt.optional $ CSL.listenNetworkAddressOption Nothing
       pure $ CSL.NetworkConfigOpts
         { CSL.ncoTopology = ncoTopology
-        , CSL.ncoKademlia = ncoKademlia
         , CSL.ncoSelf = ncoSelf
         , CSL.ncoPort = ncoPort
         , CSL.ncoPolicies = ncoPolicies
@@ -663,7 +654,11 @@ main = do
               slotDuration = SlotLength (fromRational (toRational slotMs / 1000))
               systemStart = SystemStart (Cardano.gdStartTime (Cardano.configGenesisData newGenesisConfig))
           btime <- realBlockchainTime rr nullTracer systemStart $ focusSlotLengths $ singletonSlotLengths slotDuration
-          withDB dbc dbTracer indexTracer rr btime nodeConfig extLedgerState $ \idx cdb -> do
+          -- FIXME apparently there are two sources of definition of slots
+          -- per epoch (epochSlots). We use the one from the old genesis config
+          -- because that's just easier to figure out, but presumably there is
+          -- also one in the protocolInfo.
+          withDB dbc dbTracer indexTracer rr btime epochSlots nodeConfig extLedgerState $ \idx cdb -> do
             traceWith (Logging.convertTrace' trace) ("", Monitoring.Info, fromString "Database opened")
             let shelleyClientTracer = contramap (\it -> ("shelley.client", defineSeverity (wiaEvent it), fromString (show it))) (Logging.convertTrace' trace)
                 shelleyServerTracer = contramap (\it -> ("shelley.server", defineSeverity (wiaEvent it), fromString (show it))) (Logging.convertTrace' trace)

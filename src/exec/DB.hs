@@ -20,11 +20,9 @@ import           Ouroboros.Byron.Proxy.Index.Types         (Index)
 import           Ouroboros.Consensus.Block                 (BlockProtocol,
                                                             GetHeader (Header))
 import           Ouroboros.Consensus.BlockchainTime        (BlockchainTime)
-import           Ouroboros.Consensus.Ledger.Byron.Config   (pbftEpochSlots)
 import           Ouroboros.Consensus.Ledger.Extended       (ExtLedgerState)
-import           Ouroboros.Consensus.Node                  (withChainDB)
-import           Ouroboros.Consensus.Protocol              (NodeConfig,
-                                                            pbftExtConfig)
+import           Ouroboros.Consensus.Node                  (openChainDB)
+import           Ouroboros.Consensus.Protocol              (NodeConfig)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
 import           Ouroboros.Storage.ChainDB.API             (ChainDB)
@@ -49,25 +47,24 @@ withDB
   -> Tracer IO Sqlite.TraceEvent
   -> ResourceRegistry IO
   -> BlockchainTime IO
+  -> Cardano.EpochSlots
+  -- ^ No clue whether or not this can be derived from the
+  -- `NodeConfig (BlockProtocol ByronBlock)`
   -> NodeConfig (BlockProtocol ByronBlock)
   -> ExtLedgerState ByronBlock
   -> (Index IO (Header ByronBlock) -> ChainDB IO ByronBlock -> IO t)
   -> IO t
-withDB dbOptions dbTracer indexTracer rr btime nodeConfig extLedgerState k = do
+withDB dbOptions dbTracer indexTracer rr btime epochSlots nodeConfig extLedgerState k = do
   -- The ChainDB/Storage layer will not create a directory for us, we have
   -- to ensure it exists.
   System.Directory.createDirectoryIfMissing True (dbFilePath dbOptions)
 
-  withChainDB dbTracer rr btime (dbFilePath dbOptions) nodeConfig extLedgerState customiseArgs
-    $ \cdb ->
-      Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx -> do
-        _ <- ResourceRegistry.forkLinkedThread rr $ Index.trackChainDB rr idx cdb
-        k idx cdb
+  cdb <- openChainDB dbTracer rr btime (dbFilePath dbOptions) nodeConfig extLedgerState customiseArgs
+  Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx -> do
+    _ <- ResourceRegistry.forkLinkedThread rr $ Index.trackChainDB rr idx cdb
+    k idx cdb
 
   where
-
-  epochSlots :: Cardano.EpochSlots
-  epochSlots = pbftEpochSlots $ pbftExtConfig nodeConfig
 
   customiseArgs :: ChainDbArgs IO ByronBlock -> ChainDbArgs IO ByronBlock
   customiseArgs args = args
@@ -86,7 +83,9 @@ withDB dbOptions dbTracer indexTracer rr btime nodeConfig extLedgerState k = do
       cdbDiskPolicy = DiskPolicy
         { onDiskNumSnapshots  = 2
           -- Take a snapshot every 20s
-        , onDiskWriteInterval = return $ secondsToDiffTime 20
+        , onDiskShouldTakeSnapshot = \mTime _ -> case mTime of
+            Nothing -> True
+            Just it -> it >= secondsToDiffTime 20
         }
     , cdbBlocksPerFile = 21600 -- ?
     , cdbGcDelay = secondsToDiffTime 20

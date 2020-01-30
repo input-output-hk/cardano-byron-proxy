@@ -61,8 +61,8 @@ withShelley rr cdb conf state blockchainTime k = do
   k kernel ctable (initiatorNetworkApplication <$> vs) (responderNetworkApplication <$> vs)
 
 versions
-  :: NodeConfig (BlockProtocol ByronBlock) -> NetworkApplication IO ConnectionId Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
-  -> Versions NodeToNodeVersion DictVersion (NetworkApplication IO ConnectionId Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ())
+  :: NodeConfig (BlockProtocol ByronBlock) -> NetworkApplication IO ConnectionId Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ()
+  -> Versions NodeToNodeVersion DictVersion (NetworkApplication IO ConnectionId Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString Lazy.ByteString ())
 versions conf = simpleSingletonVersions NodeToNodeV_1 (NodeToNodeVersionData (nodeNetworkMagic (Proxy @ByronBlock) conf)) (DictVersion nodeToNodeCodecCBORTerm)
 
 mkParams
@@ -81,10 +81,14 @@ mkParams rr cdb nconf nstate blockchainTime = NodeArgs
   , btime = blockchainTime
   , chainDB = cdb
   , blockProduction = Nothing
+  -- Don't automatically add a dummy genesis EBB, we'll add the real one
+  -- later on
+  , initChainDB = \_cfg _cdb -> return ()
   , blockFetchSize = nodeBlockFetchSize
   , blockMatchesHeader = nodeBlockMatchesHeader
   , maxUnackTxs = maxBound
   , maxBlockSize = MaxBlockBodySize maxBound
   , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO: make configurable!
-  , mempoolCap = MempoolCapacityBytes 128_000
+  , mempoolCap = MempoolCapacityBytesOverride
+      (MempoolCapacityBytes 128_000) -- TBD ???? should we override?
   }
