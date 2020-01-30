@@ -1,16 +1,43 @@
+{ system ? builtins.currentSystem
+, crossSystem ? null
+, config ? {}
+, overlays ? []
+}:
+
 let
   sources = import ./nix/sources.nix;
-  pkgs' = import sources.nixpkgs {};
-  haskellNixJson = let
-    src = sources."haskell.nix";
-  in __toJSON {
-    inherit (sources."haskell.nix") rev sha256;
-    url = "https://github.com/${src.owner}/${src.repo}";
+  iohkNix = import sources.iohk-nix {
+    sourcesOverride = sources;
   };
-  iohkNix = import sources.iohk-nix { haskellNixJsonOverride = pkgs'.writeText "haskell-nix.json" haskellNixJson; };
-  pkgs = iohkNix.pkgs;
+  haskellNix = import sources."haskell.nix";
+  args = haskellNix // {
+    inherit system crossSystem;
+    overlays = (haskellNix.overlays or []) ++ overlays;
+    config = (haskellNix.config or {}) // config;
+  };
+  nixpkgs = import sources.nixpkgs;
+  pkgs = nixpkgs args;
+  haskellPackages = import ./nix/pkgs.nix {
+    inherit pkgs;
+    src = ./.;
+  };
   lib = pkgs.lib;
   niv = (import sources.niv {}).niv;
-in lib // iohkNix.cardanoLib // iohkNix // {
-  inherit niv iohkNix;
+  isCardanoProxy = with lib; package:
+    (package.isHaskell or false) &&
+      ((hasPrefix "cardano-byron-proxy" package.identifier.name) ||
+       (elem package.identifier.name [ "text-class" "bech32" ]));
+  filterCardanoPackages = pkgs.lib.filterAttrs (_: package: isCardanoProxy package);
+  getPackageChecks = pkgs.lib.mapAttrs (_: package: package.checks);
+in lib // iohkNix.cardanoLib // {
+  inherit (pkgs.haskell-nix.haskellLib) collectComponents;
+  inherit
+    niv
+    sources
+    haskellPackages
+    pkgs
+    iohkNix
+    isCardanoProxy
+    getPackageChecks
+    filterCardanoPackages;
 }

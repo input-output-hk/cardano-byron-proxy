@@ -32,7 +32,7 @@ in {
 
       package = mkOption {
         type = types.package;
-        default = (import ../nix-tools.nix {}).nix-tools.exes.cardano-byron-proxy;
+        default = (import ../../lib.nix {}).haskellPackages.cardano-byron-proxy.components.exes.cardano-byron-proxy;
         defaultText = "cardano-byron-proxy";
         description = ''
           The byron-proxy package that should be used
