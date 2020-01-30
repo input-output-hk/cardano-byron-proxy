@@ -13,7 +13,7 @@ import Ouroboros.Consensus.Block (GetHeader (Header))
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import Ouroboros.Network.Block (ChainUpdate (..), Point (..))
 import Ouroboros.Network.Point (WithOrigin (Origin))
-import Ouroboros.Storage.ChainDB.API (ChainDB, Reader)
+import Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB, Reader)
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 
 -- | Reapaetedly take the reader instruction and update the index accordingly.
@@ -86,6 +86,6 @@ trackChainDB rr idx cdb = bracket acquireReader releaseReader $ \rdr -> do
   trackReaderBlocking idx rdr
   where
   acquireReader :: IO (Reader IO blk (Header blk))
-  acquireReader = ChainDB.deserialiseReader <$> ChainDB.newHeaderReader cdb rr
+  acquireReader = ChainDB.traverseReader id <$> ChainDB.newReader cdb rr GetHeader
   releaseReader :: Reader IO blk (Header blk) -> IO ()
   releaseReader = ChainDB.readerClose

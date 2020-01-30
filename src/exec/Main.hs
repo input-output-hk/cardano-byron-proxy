@@ -264,14 +264,6 @@ cliParser = ByronProxyOptions
               , Opt.metavar "FILEPATH"
               , Opt.help "Path to a YAML file containing the network topology"
               ]
-      ncoKademlia <-
-          Opt.optional $ Opt.strOption $
-          mconcat
-              [ Opt.long "kademlia"
-              , Opt.metavar "FILEPATH"
-              , Opt.help
-                    "Path to a YAML file containing the kademlia configuration"
-              ]
       ncoSelf <-
           Opt.optional $ Opt.option (fromString <$> Opt.str) $
           mconcat
@@ -305,7 +297,6 @@ cliParser = ByronProxyOptions
       ncoBindAddress <- Opt.optional $ CSL.listenNetworkAddressOption Nothing
       pure $ CSL.NetworkConfigOpts
         { CSL.ncoTopology = ncoTopology
-        , CSL.ncoKademlia = ncoKademlia
         , CSL.ncoSelf = ncoSelf
         , CSL.ncoPort = ncoPort
         , CSL.ncoPolicies = ncoPolicies

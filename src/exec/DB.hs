@@ -22,15 +22,14 @@ import           Ouroboros.Consensus.Block                 (BlockProtocol,
 import           Ouroboros.Consensus.BlockchainTime        (BlockchainTime)
 import           Ouroboros.Consensus.Ledger.Byron.Config   (pbftEpochSlots)
 import           Ouroboros.Consensus.Ledger.Extended       (ExtLedgerState)
-import           Ouroboros.Consensus.Node                  (withChainDB)
-import           Ouroboros.Consensus.Protocol              (NodeConfig,
-                                                            pbftExtConfig)
+import           Ouroboros.Consensus.Node                  (openChainDB)
+import           Ouroboros.Consensus.Protocol              (NodeConfig)
+import           Ouroboros.Consensus.Protocol.ExtConfig    (extNodeConfig)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
-import           Ouroboros.Storage.ChainDB.API             (ChainDB)
-import qualified Ouroboros.Storage.ChainDB.Impl            as ChainDB
+import           Ouroboros.Storage.ChainDB                 (ChainDB)
+import qualified Ouroboros.Storage.ChainDB                 as ChainDB
 import           Ouroboros.Storage.ChainDB.Impl.Args       (ChainDbArgs (..))
-import           Ouroboros.Storage.LedgerDB.DiskPolicy     (DiskPolicy (..))
 
 data DBConfig = DBConfig
   { dbFilePath    :: !FilePath
@@ -58,36 +57,20 @@ withDB dbOptions dbTracer indexTracer rr btime nodeConfig extLedgerState k = do
   -- to ensure it exists.
   System.Directory.createDirectoryIfMissing True (dbFilePath dbOptions)
 
-  withChainDB dbTracer rr btime (dbFilePath dbOptions) nodeConfig extLedgerState customiseArgs
-    $ \cdb ->
-      Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx -> do
-        _ <- ResourceRegistry.forkLinkedThread rr $ Index.trackChainDB rr idx cdb
-        k idx cdb
+  (_, cdb) <- ResourceRegistry.allocate rr
+    (\_ -> openChainDB dbTracer rr btime (dbFilePath dbOptions) nodeConfig extLedgerState customiseArgs)
+    ChainDB.closeDB
+  Sqlite.withIndexAuto epochSlots indexTracer (indexFilePath dbOptions) $ \idx -> do
+    _ <- ResourceRegistry.forkLinkedThread rr $ Index.trackChainDB rr idx cdb
+    k idx cdb
 
   where
 
   epochSlots :: Cardano.EpochSlots
-  epochSlots = pbftEpochSlots $ pbftExtConfig nodeConfig
+  epochSlots = pbftEpochSlots $ extNodeConfig nodeConfig
 
   customiseArgs :: ChainDbArgs IO ByronBlock -> ChainDbArgs IO ByronBlock
   customiseArgs args = args
-    { -- Don't use the default 'diskPolicy', because that is meant for core
-      -- nodes which update the ledger at most once (with one block) per slot
-      -- duration while we're updating the ledger with as many blocks as we
-      -- can download per slot duration.
-      --
-      -- When using the default 'diskPolicy', only one snapshot is made every
-      -- 12 hours, which is clearly not often enough for the
-      -- cardano-byron-proxy. Remember that without a recent snapshot, all the
-      -- transactions from the blocks newer than the most-recent on-disk
-      -- snapshot have to be replayed against it which requires reading those
-      -- blocks and executing the ledger rules, which significantly slows down
-      -- startup.
-      cdbDiskPolicy = DiskPolicy
-        { onDiskNumSnapshots  = 2
-          -- Take a snapshot every 20s
-        , onDiskWriteInterval = return $ secondsToDiffTime 20
-        }
-    , cdbBlocksPerFile = 21600 -- ?
+    { cdbBlocksPerFile = 21600 -- ?
     , cdbGcDelay = secondsToDiffTime 20
     }

@@ -136,6 +136,8 @@ executable cardano-byron-proxy
                        -Wincomplete-uni-patterns
 
 executable cddl-test
+  -- Don't build until somebody comes along and maintains this
+  buildable:           False
   main-is:             Main.hs
   hs-source-dirs:      src/cddl-test
   default-language:    Haskell2010

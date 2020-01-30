@@ -29,7 +29,7 @@ import           Ouroboros.Byron.Proxy.Block (ByronBlock, isEBB)
 
 import           Ouroboros.Storage.Common (EpochSize (..),EpochNo(..))
 import qualified Ouroboros.Storage.ChainDB.API as ChainDB
-import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, ImmDbArgs(..), openDB, getBlob)
+import           Ouroboros.Storage.ChainDB.Impl.ImmDB (ImmDB, ImmDbArgs(..), openDB)
 import           Ouroboros.Storage.FS.API.Types (MountPoint (..))
 import           Ouroboros.Storage.FS.IO (ioHasFS)
 import           Ouroboros.Storage.EpochInfo.Impl (newEpochInfo)
@@ -122,7 +122,8 @@ data ReadResult = Block ByteString | FutureEpoch | NoData
 
 readBlock :: ImmDB IO ByronBlock -> EpochNo -> IO ReadResult
 readBlock db epoch = do
-    ret <- try $ getBlob db ChainDB.Block $ Left epoch
+    ret <- try $ ChainDB.getBlockComponent db ChainDB.GetRawBlock $ Left epoch
+    --ret <- try $ getBlob db ChainDB.Block $ Left epoch
     case ret of
         (Left (UserError (ReadFutureEBBError _ _) _)) -> return FutureEpoch
         (Left err) -> throwIO err
