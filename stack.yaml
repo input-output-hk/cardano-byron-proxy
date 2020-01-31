@@ -6,7 +6,7 @@ packages:
 extra-deps:
 
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: 15e7df23462d4840d4ad04e8c33d6a65041c4857
+    commit: dd30455144e11efb435619383ba84ce02aee720d
     subdirs:
       - iohk-monitoring
       - contra-tracer
@@ -14,7 +14,7 @@ extra-deps:
       - tracer-transformers
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 0fcb3a306e96ce36fca75d62792c55ab1de871ea
+    commit: eed4fc484366214831576eef0c7fe90d1d08c78b
     subdirs:
       - binary
       - binary/test
@@ -22,7 +22,7 @@ extra-deps:
       - slotting
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 3f4cc020d452e0af4b42208fe4a8cea8f1d710b5
+    commit: c62e2eeba5756898cbf59732fccd6a83a4065c18
     subdirs:
       - cardano-ledger/test
       - cardano-ledger
@@ -30,7 +30,7 @@ extra-deps:
       - crypto/test
 
   - git: https://github.com/input-output-hk/cardano-ledger-specs
-    commit: 6d154d16de01edf2d3ff56303b7a34cb188ed217
+    commit: f27e8b66a393f0b7da1893889dcea07da0fe4dec
     subdirs:
       # small-steps
       - byron/semantics/executable-spec
@@ -58,11 +58,12 @@ extra-deps:
     commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: 62d8e66983b1690efa6c17e0d6fe0535f2a087e0
+    commit: 398004e1403367cc2a25c639eb6349d473e51b2d
     subdirs:
       - ouroboros-consensus
       - ouroboros-network
       - io-sim-classes
+      - io-sim
       - network-mux
       - typed-protocols
       - typed-protocols-cbor
@@ -87,7 +88,7 @@ extra-deps:
 
   # The parts of cardano-sl that are needed for the byron proxy.
   - git: https://github.com/input-output-hk/cardano-sl
-    commit: 2d3ffb78527adbbd555c9807fda5f7f5f267a936
+    commit: a4c7991852017b8a24ad197050600d593a2e07cb
     subdirs:
       - lib
       - binary
@@ -116,7 +117,7 @@ extra-deps:
     commit: 018a50b9042c2115c3ec9c9fd5ca5f28737dd29c
 
   - git: https://github.com/avieth/network-transport-tcp
-    commit: 613332da47e2c3e4a79017ca188c9e6568671222
+    commit: 2024d562d693518d983943331838b1857c2bf063
 
   - git: https://github.com/input-output-hk/universum
     commit: 15f7db758ff5a24b874de2247f6f7a4576562da5
@@ -143,6 +144,9 @@ extra-deps:
   - systemd-2.0.0
   - socks-0.6.0
   - connection-0.3.0
+  - io-streams-1.5.1.0
+  - io-streams-haproxy-1.0.1.0
+  - snap-core-1.0.4.0-r2
   - snap-server-1.1.1.1
   - swagger2-2.4
   # Needed by swagger2 version (InsOrd module)
@@ -150,10 +154,13 @@ extra-deps:
   # Neede because of swagger2
   - servant-swagger-1.1.7.1
   # Needed because of servant-swagger
-  - servant-0.15
-  - servant-client-0.15
-  - servant-client-core-0.15
-  - servant-server-0.15
+  - servant-0.16.1
+  - servant-client-0.16.0.1
+  - servant-client-core-0.16
+  - servant-server-0.16.1
+  - servant-blaze-0.9
+  - http-api-data-0.4.1.1
+  - time-compat-1.9.2.2
 
   - Unique-0.4.7.6
   - moo-1.2

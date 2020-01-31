@@ -45,8 +45,8 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-sl";
-      rev = "2d3ffb78527adbbd555c9807fda5f7f5f267a936";
-      sha256 = "0g7wxysrhk8ms0vy9q0fg76q2isw1176ajlfg04fbj3s944m2iy8";
+      rev = "a4c7991852017b8a24ad197050600d593a2e07cb";
+      sha256 = "0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm";
       });
     postUnpack = "sourceRoot+=/binary/test; echo source root reset to \$sourceRoot";
     }
