@@ -20,13 +20,12 @@ import qualified Ouroboros.Storage.ChainDB.API as ChainDB
 trackReaderBlocking
   :: ( Monad m )
   => Index m (Header blk)
-  -> Reader m blk (m (Header blk))
+  -> Reader m blk (Header blk)
   -> m x
 trackReaderBlocking idx reader = do
   instruction <- ChainDB.readerInstructionBlocking reader
   case instruction of
-    AddBlock mblk -> do
-      blk <- mblk
+    AddBlock blk -> do
       Index.rollforward idx blk
       trackReaderBlocking idx reader
     RollBack pnt -> do
@@ -38,13 +37,12 @@ trackReaderBlocking idx reader = do
 trackReader
   :: ( Monad m )
   => Index m (Header blk)
-  -> Reader m blk (m (Header blk))
+  -> Reader m blk (Header blk)
   -> m ()
 trackReader idx reader = do
   mInstruction <- ChainDB.readerInstruction reader
   case mInstruction of
-    Just (AddBlock mblk) -> do
-      blk <- mblk
+    Just (AddBlock blk) -> do
       Index.rollforward idx blk
       trackReader idx reader
     Just (RollBack pnt) -> do
@@ -87,8 +85,7 @@ trackChainDB rr idx cdb = bracket acquireReader releaseReader $ \rdr -> do
   -- ... then attempt to stay in sync.
   trackReaderBlocking idx rdr
   where
-  acquireReader :: IO (Reader IO blk (IO (Header blk)))
-  --acquireReader = ChainDB.deserialiseReader <$> ChainDB.newReader cdb rr component
-  acquireReader = ChainDB.newReader cdb rr GetHeader
-  releaseReader :: Reader IO blk (IO (Header blk)) -> IO ()
+  acquireReader :: IO (Reader IO blk (Header blk))
+  acquireReader = ChainDB.traverseReader id <$> ChainDB.newReader cdb rr GetHeader
+  releaseReader :: Reader IO blk (Header blk) -> IO ()
   releaseReader = ChainDB.readerClose

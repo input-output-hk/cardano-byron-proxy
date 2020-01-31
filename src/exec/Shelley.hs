@@ -18,7 +18,6 @@ import Cardano.Prelude (Proxy(..))
 import Ouroboros.Byron.Proxy.Block (ByronBlock)
 import Ouroboros.Consensus.Block (BlockProtocol)
 import Ouroboros.Consensus.Protocol (NodeConfig, NodeState)
-import Ouroboros.Consensus.Mempool.Impl (MempoolCapacityBytes (..))
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import Ouroboros.Storage.ChainDB.API (ChainDB)
 
@@ -89,6 +88,5 @@ mkParams rr cdb nconf nstate blockchainTime = NodeArgs
   , maxUnackTxs = maxBound
   , maxBlockSize = MaxBlockBodySize maxBound
   , chainSyncPipelining = pipelineDecisionLowHighMark 200 300 -- TODO: make configurable!
-  , mempoolCap = MempoolCapacityBytesOverride
-      (MempoolCapacityBytes 128_000) -- TBD ???? should we override?
+  , mempoolCap = NoMempoolCapacityBytesOverride
   }
