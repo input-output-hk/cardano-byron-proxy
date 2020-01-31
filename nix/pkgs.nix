@@ -1,41 +1,35 @@
-{ pkgs ? import <nixpkgs> {}
-, iohk-extras ? {}
-, iohk-module ? {}
-, haskell
-, ...
+{ pkgs
+, src
+, haskellCompiler ? "ghc865"
 }:
 let
 
-  # our packages
-  stack-pkgs = import ./.stack.nix;
+  haskell = pkgs.haskell-nix;
 
-  src = pkgs.lib.cleanSourceWith {
-    src = ../.;
-    filter = name: type: let
-      baseName = baseNameOf (toString name);
-    in
-      (baseName != "db-byron-proxy-mainnet")
-      && (baseName != "index-byron-proxy-mainnet");
-  };
+  # TODO: move to iohk-nix
+  # Chop out a subdirectory of the source, so that the package is only
+  # rebuilt when something in the subdirectory changes.
+  filterSubDir = dir:  with pkgs.lib; let
+      isFiltered = src ? _isLibCleanSourceWith;
+      origSrc = if isFiltered then src.origSrc else src;
+    in cleanSourceWith {
+      inherit src;
+      filter = path: type:
+        type == "directory" ||
+        hasPrefix (toString origSrc + toString dir) path;
+    } + dir;
 
-  # Build the packageset with module support.
-  # We can essentially override anything in the modules
-  # section.
-  #
-  #  packages.cbors.patches = [ ./one.patch ];
-  #  packages.cbors.flags.optimize-gmp = false;
-  #
-  compiler = (stack-pkgs.extras haskell.hackage).compiler;
-  pkgSet = haskell.mkStackPkgSet {
-    inherit stack-pkgs;
-    pkg-def-extras = [
-      iohk-extras.${compiler.nix-name}
-    ];
+  recRecurseIntoAttrs = with pkgs; pred: x: if pred x then recurseIntoAttrs (lib.mapAttrs (n: v: if n == "buildPackages" then v else recRecurseIntoAttrs pred v) x) else x;
+  pkgSet = recRecurseIntoAttrs (x: with pkgs; lib.isAttrs x && !lib.isDerivation x)
+    # we are only intersted in listing the project packages
+    (pkgs.lib.filterAttrs (with pkgs.haskell-nix.haskellLib; (n: p: p != null && (isLocalPackage p && isProjectPackage p) || n == "shellFor"))
+      # from our project which is based on a cabal project.
+      (pkgs.haskell-nix.cabalProject {
+          src = pkgs.haskell-nix.haskellLib.cleanGit { inherit src; };
+          ghc = pkgs.haskell-nix.compiler.${haskellCompiler};
+
+    configureArgs = "--disable-tests";
     modules = [
-      # the iohk-module will supply us with the necessary
-      # cross compilation plumbing to make Template Haskell
-      # work when cross compiling.
-      iohk-module
       {
         doHaddock = false;
         enableLibraryProfiling = false;
@@ -50,11 +44,7 @@ let
         packages.io-sim.configureFlags = [ "--ghc-option=-Werror" ];
         packages.io-sim-classes.configureFlags = [ "--ghc-option=-Werror" ];
         packages.prometheus.components.library.doExactConfig = true;
-        # filter the source
-        packages.cardano-byron-proxy.src = src;
       }
     ];
-  };
-
-in
-  pkgSet.config.hsPkgs // { _config = pkgSet.config; }
+      }));
+ in pkgSet
