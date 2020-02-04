@@ -155,11 +155,11 @@ extra-deps:
   - servant-swagger-1.1.7.1
   # Needed because of servant-swagger
   - servant-0.16.1
-  - servant-client-0.16.0.1
+  - servant-client-0.16
   - servant-client-core-0.16
   - servant-server-0.16.1
   - servant-blaze-0.9
-  - http-api-data-0.4.1.1
+  - http-api-data-0.4.1
   - time-compat-1.9.2.2
 
   - Unique-0.4.7.6

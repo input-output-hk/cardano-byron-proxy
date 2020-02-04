@@ -35,11 +35,11 @@
         "insert-ordered-containers" = (((hackage.insert-ordered-containers)."0.2.2").revisions).default;
         "servant-swagger" = (((hackage.servant-swagger)."1.1.7.1").revisions).default;
         "servant" = (((hackage.servant)."0.16.1").revisions).default;
-        "servant-client" = (((hackage.servant-client)."0.16.0.1").revisions).default;
+        "servant-client" = (((hackage.servant-client)."0.16").revisions).default;
         "servant-client-core" = (((hackage.servant-client-core)."0.16").revisions).default;
         "servant-server" = (((hackage.servant-server)."0.16.1").revisions).default;
         "servant-blaze" = (((hackage.servant-blaze)."0.9").revisions).default;
-        "http-api-data" = (((hackage.http-api-data)."0.4.1.1").revisions).default;
+        "http-api-data" = (((hackage.http-api-data)."0.4.1").revisions).default;
         "time-compat" = (((hackage.time-compat)."1.9.2.2").revisions).default;
         "Unique" = (((hackage.Unique)."0.4.7.6").revisions).default;
         "moo" = (((hackage.moo)."1.2").revisions).default;
