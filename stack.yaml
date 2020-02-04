@@ -6,7 +6,7 @@ packages:
 extra-deps:
 
   - git: https://github.com/input-output-hk/iohk-monitoring-framework
-    commit: 15e7df23462d4840d4ad04e8c33d6a65041c4857
+    commit: dd30455144e11efb435619383ba84ce02aee720d
     subdirs:
       - iohk-monitoring
       - contra-tracer
@@ -14,7 +14,7 @@ extra-deps:
       - tracer-transformers
 
   - git: https://github.com/input-output-hk/cardano-base
-    commit: 0fcb3a306e96ce36fca75d62792c55ab1de871ea
+    commit: eed4fc484366214831576eef0c7fe90d1d08c78b
     subdirs:
       - binary
       - binary/test
@@ -22,10 +22,22 @@ extra-deps:
       - slotting
 
   - git: https://github.com/input-output-hk/cardano-ledger
-    commit: 3f4cc020d452e0af4b42208fe4a8cea8f1d710b5
+    commit: c62e2eeba5756898cbf59732fccd6a83a4065c18
     subdirs:
+      - cardano-ledger/test
       - cardano-ledger
       - crypto
+      - crypto/test
+
+  - git: https://github.com/input-output-hk/cardano-ledger-specs
+    commit: f27e8b66a393f0b7da1893889dcea07da0fe4dec
+    subdirs:
+      # small-steps
+      - byron/semantics/executable-spec
+      # cs-ledger
+      - byron/ledger/executable-spec
+      # cs-blockchain
+      - byron/chain/executable-spec
 
   - git: https://github.com/input-output-hk/cardano-prelude
     commit: 00487726c4bc21b4744e59d913334ebfeac7d68e
@@ -38,15 +50,20 @@ extra-deps:
     subdirs:
       - cardano-shell
 
+    # Needed for `cardano-ledger-specs`
+  - git: https://github.com/input-output-hk/goblins
+    commit: 26d35ad52fe9ade3391532dbfeb2f416f07650bc
+
   - git: https://github.com/input-output-hk/cardano-sl-x509
     commit: 43a036c5bbe68ca2e9cbe611eab7982e2348fe49
 
   - git: https://github.com/input-output-hk/ouroboros-network
-    commit: ac6ac3f302c800f397a59d91bbfb29477379f0c2
+    commit: 398004e1403367cc2a25c639eb6349d473e51b2d
     subdirs:
       - ouroboros-consensus
       - ouroboros-network
       - io-sim-classes
+      - io-sim
       - network-mux
       - typed-protocols
       - typed-protocols-cbor
@@ -71,7 +88,7 @@ extra-deps:
 
   # The parts of cardano-sl that are needed for the byron proxy.
   - git: https://github.com/input-output-hk/cardano-sl
-    commit: f778004a2d9940567732528ab9d0229d0d4984e2
+    commit: a4c7991852017b8a24ad197050600d593a2e07cb
     subdirs:
       - lib
       - binary
@@ -96,14 +113,11 @@ extra-deps:
   - git: https://github.com/input-output-hk/rocksdb-haskell-ng
     commit: 49f501a082d745f3b880677220a29cafaa181452
 
-  - git: https://github.com/avieth/kademlia
-    commit: 38a0575bb303804461f4b6176ca38eba81adbd79
-
   - git: https://github.com/serokell/network-transport
     commit: 018a50b9042c2115c3ec9c9fd5ca5f28737dd29c
 
   - git: https://github.com/avieth/network-transport-tcp
-    commit: 46f2942423d9ad3c81040565a9e9d5b9e08ddcc4
+    commit: 2024d562d693518d983943331838b1857c2bf063
 
   - git: https://github.com/input-output-hk/universum
     commit: 15f7db758ff5a24b874de2247f6f7a4576562da5
@@ -125,6 +139,32 @@ extra-deps:
   - o-clock-1.0.0.1
   - ekg-wai-0.1.0.3
   - lzma-clib-5.2.2
+
+  - network-3.1.0.1
+  - systemd-2.0.0
+  - socks-0.6.0
+  - connection-0.3.0
+  - io-streams-1.5.1.0
+  - io-streams-haproxy-1.0.1.0
+  - snap-core-1.0.4.0-r2
+  - snap-server-1.1.1.1
+  - swagger2-2.4
+  # Needed by swagger2 version (InsOrd module)
+  - insert-ordered-containers-0.2.2
+  # Neede because of swagger2
+  - servant-swagger-1.1.7.1
+  # Needed because of servant-swagger
+  - servant-0.16.1
+  - servant-client-0.16
+  - servant-client-core-0.16
+  - servant-server-0.16.1
+  - servant-blaze-0.9
+  - http-api-data-0.4.1
+  - time-compat-1.9.2.2
+
+  - Unique-0.4.7.6
+  - moo-1.2
+  - gray-code-0.3.1
 
 ghc-options:
   cardano-byron-proxy:     -Wall -Werror -Wcompat -fwarn-redundant-constraints -fwarn-incomplete-patterns -fwarn-unused-imports -Wincomplete-record-updates -Wincomplete-uni-patterns

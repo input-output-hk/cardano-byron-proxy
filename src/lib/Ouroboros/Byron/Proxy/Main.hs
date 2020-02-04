@@ -108,8 +108,6 @@ import           Pos.DB.Class                              (SerializedBlock)
 import           Pos.Diffusion.Full                        (FullDiffusionConfiguration (..),
                                                             diffusionLayerFull)
 import           Pos.Infra.Diffusion.Types
--- An ancient relic. Needed for the network configuration type.
-import           Pos.Infra.DHT.Real.Param                  (KademliaParams)
 import           Pos.Infra.Network.Types                   (NetworkConfig (..))
 import           Pos.Logic.Types                           hiding (streamBlocks)
 import qualified Pos.Logic.Types                           as Logic
@@ -163,7 +161,7 @@ data ByronProxyConfig = ByronProxyConfig
   , bpcEpochSlots        :: !EpochSlots
     -- | Byron network configuration. To get one, consider using
     -- Pos.Infra.Network.CLI.intNetworkConfigOpts
-  , bpcNetworkConfig     :: !(NetworkConfig KademliaParams)
+  , bpcNetworkConfig     :: !(NetworkConfig ())
     -- | Configuration for the Byron Diffusion layer (i.e. the network part).
   , bpcDiffusionConfig   :: !FullDiffusionConfiguration
   }
@@ -176,7 +174,7 @@ configFromCSLConfigs
   -> CSL.BlockConfiguration
   -> CSL.UpdateConfiguration
   -> CSL.NodeConfiguration
-  -> NetworkConfig KademliaParams
+  -> NetworkConfig ()
   -> Word32 -- ^ Batch size for block streaming.
   -> Trace IO (LogNamed (Wlog.Severity, Text))
   -> ByronProxyConfig
@@ -510,7 +508,8 @@ bbsStreamBlocks rr idx db _ hh f yieldFirst k = do
             _ -> error "bbsStreamBlocks: ChainDB reader unexpected instruction"
   where
 
-  acquireReader = ChainDB.deserialiseReader <$> ChainDB.newBlockReader db rr
+  --acquireReader = ChainDB.deserialiseReader <$> ChainDB.newBlockReader db rr
+  acquireReader = ChainDB.newBlockReader db rr
   releaseReader = ChainDB.readerClose
 
   conduitFrom rdr blk shouldYield = do
@@ -600,14 +599,15 @@ bbsGetHashesRange rr idx db onErr mLimit from to = do
     case outcome of
       Left (ChainDB.MissingBlock _point)      -> onErr "FIXME put error message"
       Left (ChainDB.ForkTooOld   _streamFrom) -> onErr "FIXME put error message"
-      Right iterator                          -> pure $ ChainDB.deserialiseIterator iterator
+      --Right iterator                          -> pure $ ChainDB.deserialiseIterator iterator
+      Right iterator                          -> pure iterator
 
   releaseIterator = ChainDB.iteratorClose
 
   drainIterator
     :: Word
     -> [Byron.Legacy.HeaderHash]
-    -> ChainDB.Iterator IO ByronBlock
+    -> ChainDB.Iterator IO ByronBlock ByronBlock
     -> IO (Maybe (OldestFirst NonEmpty Byron.Legacy.HeaderHash))
   drainIterator 0 _   _    = pure Nothing
   drainIterator n acc iter = do

@@ -2,7 +2,7 @@
 , pkgs
 , ... }:
 
-with import ../../lib.nix;
+with import ../../lib.nix {};
 let
   cfg = config.services.byron-proxy;
   envConfig = cfg.cardanoLib.environments.${cfg.environment};
@@ -32,7 +32,7 @@ in {
 
       package = mkOption {
         type = types.package;
-        default = (import ../nix-tools.nix {}).nix-tools.exes.cardano-byron-proxy;
+        default = haskellPackages.cardano-byron-proxy.components.exes.cardano-byron-proxy;
         defaultText = "cardano-byron-proxy";
         description = ''
           The byron-proxy package that should be used

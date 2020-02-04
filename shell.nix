@@ -1,5 +1,5 @@
 { withHoogle ? true
-, localLib ? import ./lib.nix
+, localLib ? import ./lib.nix {}
 }:
 let
   pkgs = localLib.iohkNix.pkgs;
