@@ -40,6 +40,7 @@ let
         # This is similar to jailbreakCabal, however it
         # does not require any messing with cabal files.
         packages.katip.components.library.doExactConfig = true;
+        packages.ekg.components.library.enableSeparateDataOutput = true;
         packages.typed-protocols.configureFlags = [ "--ghc-option=-Werror" ];
         packages.io-sim.configureFlags = [ "--ghc-option=-Werror" ];
         packages.io-sim-classes.configureFlags = [ "--ghc-option=-Werror" ];
