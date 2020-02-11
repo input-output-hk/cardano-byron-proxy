@@ -134,6 +134,12 @@ executable cardano-byron-proxy
                        -fwarn-unused-imports
                        -Wincomplete-record-updates
                        -Wincomplete-uni-patterns
+                       -rtsopts
+  if arch(arm)
+     ghc-options:      "-with-rtsopts=-T -I0 -N1 -A16m"
+  else
+     ghc-options:      "-with-rtsopts=-T -I0 -N2 -A16m"
+
 
 executable cddl-test
   -- Don't build until somebody comes along and maintains this
