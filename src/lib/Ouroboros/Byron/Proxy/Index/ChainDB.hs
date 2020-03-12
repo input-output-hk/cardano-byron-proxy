@@ -13,8 +13,9 @@ import Ouroboros.Consensus.Block (GetHeader (Header))
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import Ouroboros.Network.Block (ChainUpdate (..), Point (..))
 import Ouroboros.Network.Point (WithOrigin (Origin))
-import Ouroboros.Storage.ChainDB.API (BlockComponent (..), ChainDB, Reader)
-import qualified Ouroboros.Storage.ChainDB.API as ChainDB
+import Ouroboros.Consensus.Storage.ChainDB.API (ChainDB, Reader)
+import Ouroboros.Consensus.Storage.Common (BlockComponent (..))
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 
 -- | Reapaetedly take the reader instruction and update the index accordingly.
 trackReaderBlocking

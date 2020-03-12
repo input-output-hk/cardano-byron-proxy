@@ -34,20 +34,22 @@ import qualified Pos.Chain.Block as CSL (Block, BlockHeader (..), GenesisBlock,
                                          MainBlockHeader, HeaderHash, headerHash)
 import qualified Pos.Infra.Diffusion.Types as CSL
 
-import Ouroboros.Byron.Proxy.Block (ByronBlock,
-         coerceHashToLegacy, headerHash)
-import Ouroboros.Byron.Proxy.Main
+import Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 import Ouroboros.Consensus.Block (Header)
-import Ouroboros.Consensus.Ledger.Byron (ByronHash(..),
+import Ouroboros.Consensus.Byron.Ledger.Block (ByronHash(..),
          byronHeaderRaw, mkByronBlock)
-import Ouroboros.Consensus.Ledger.Byron.Auxiliary as Cardano
 import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (maxRollbacks))
 import Ouroboros.Network.Block (ChainHash (..), Point, pointHash)
 import qualified Ouroboros.Network.AnchoredFragment as AF
 import qualified Ouroboros.Network.ChainFragment as CF
-import Ouroboros.Storage.ChainDB.API (ChainDB)
-import qualified Ouroboros.Storage.ChainDB.API as ChainDB
+import Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 
+import Ouroboros.Byron.Proxy.Block (coerceHashToLegacy, headerHash)
+import Ouroboros.Byron.Proxy.Main (ByronProxy, BestTip(..)
+                                  , bestTip
+                                  , downloadChain
+                                  , announceChain)
 -- | Download the best available chain from Byron peers and write to the
 -- database, over and over again. It will download the best chain from its
 -- Byron peers regardless of whether it has a better one in the database.
@@ -73,7 +75,7 @@ download tracer genesisBlock epochSlots securityParam db bp = do
       Nothing -> do
         traceWith tracer "Seeding database with genesis"
         genesisBlock' :: ByronBlock <- recodeBlockOrFail epochSlots throwIO (Left genesisBlock)
-        ChainDB.addBlock db genesisBlock'
+        _ <- ChainDB.addBlock db genesisBlock'
         pure $ CSL.headerHash genesisBlock
       Just header -> pure $ coerceHashToLegacy (headerHash header)
     mainLoop gen tipHash
@@ -171,7 +173,7 @@ download tracer genesisBlock epochSlots securityParam db bp = do
   commitBlock :: CSL.HeaderHash -> CSL.Block -> IO CSL.HeaderHash
   commitBlock _ blk = do
     blk' <- recodeBlockOrFail epochSlots throwIO blk
-    ChainDB.addBlock db blk'
+    _ <- ChainDB.addBlock db blk'
     pure $ CSL.headerHash blk
 
   -- Catch all sync exceptions from the downloadChain call that uses the
@@ -219,6 +221,7 @@ recodeBlock epochSlots cslBlk = case Binary.decodeFullAnnotatedBytes "Block" dec
 -- stored... _unless_ in recovery mode! i.e. precisely when the new block is
 -- a continuation of the current chain.
 -- Do we wish to / need to stick to that style?
+
 announce
   :: Maybe Cardano.HeaderHash -- ^ Of block most recently announced.
   -> ChainDB IO ByronBlock

@@ -33,9 +33,8 @@ import Ouroboros.Network.Block (SlotNo (..))
 import Ouroboros.Network.Point (WithOrigin (..), blockPointHash, blockPointSlot)
 import qualified Ouroboros.Network.Point as Point (Block (..))
 
-import Ouroboros.Consensus.Ledger.Byron (ByronHash(..),
+import Ouroboros.Consensus.Byron.Ledger.Block (ByronHash(..),
          byronHeaderSlotNo, byronHeaderRaw)
-import Ouroboros.Consensus.Ledger.Byron.Auxiliary as Cardano
 
 import Ouroboros.Byron.Proxy.Block (ByronBlock(..), Header,
          headerHash)

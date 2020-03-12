@@ -17,6 +17,7 @@ import Control.Monad.Trans.Except (runExceptT)
 import Control.Tracer (Tracer (..), contramap, nullTracer, traceWith)
 import Data.Functor.Contravariant (Op (..))
 import Data.List (intercalate)
+import Data.Proxy (Proxy(..))
 import qualified Data.Reflection as Reflection (given)
 import Data.String (fromString)
 import Data.Text (Text)
@@ -66,7 +67,6 @@ import qualified Pos.Util.Trace.Named as Trace (LogNamed (..), appendName, named
 import qualified Pos.Util.Trace
 import qualified Pos.Util.Wlog as Wlog
 
-import Network.TypedProtocol.Driver.ByteLimit (DecoderFailureOrTooMuchInput (..))
 import Network.Mux.Trace (MuxError (..), MuxErrorType (..))
 
 import Ouroboros.Byron.Proxy.Block (ByronBlock)
@@ -80,28 +80,31 @@ import Ouroboros.Consensus.BlockchainTime (SlotLength (..),
                                            focusSlotLengths,
                                            realBlockchainTime,
                                            singletonSlotLengths)
-import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..), protocolSecurityParam)
+import Ouroboros.Consensus.Config (configSecurityParam)
+import Ouroboros.Consensus.Protocol.Abstract (SecurityParam (..))
 import Ouroboros.Consensus.Mempool.API (Mempool)
 import Ouroboros.Consensus.Mempool.TxSeq (TicketNo)
 import Ouroboros.Consensus.Node (getMempool)
 import Ouroboros.Consensus.Node.ErrorPolicy (consensusErrorPolicy)
-import Ouroboros.Consensus.Node.ProtocolInfo.Abstract (ProtocolInfo (..))
-import Ouroboros.Consensus.Node.ProtocolInfo.Byron (PBftSignatureThreshold (..),
-           protocolInfoByron)
+import Ouroboros.Consensus.Node.ProtocolInfo (ProtocolInfo (..))
+import Ouroboros.Consensus.Node.Run ()
+import Ouroboros.Consensus.Byron.Node (PBftSignatureThreshold (..), protocolInfoByron)
 import Ouroboros.Network.NodeToNode
 import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry (withRegistry)
-import Ouroboros.Network.Block (BlockNo (..), Point (..))
+import Ouroboros.Network.Block (BlockNo (..))
 import Ouroboros.Network.ErrorPolicy (WithAddr (..), ErrorPolicyTrace (..))
-import Ouroboros.Network.Point (WithOrigin (..))
 import Ouroboros.Network.ErrorPolicy (SuspendDecision (..))
 import Ouroboros.Network.BlockFetch.Client (BlockFetchProtocolFailure)
 import Ouroboros.Network.Protocol.Handshake.Type (HandshakeClientProtocolError)
 import qualified Ouroboros.Network.TxSubmission.Inbound as TxInbound
 import qualified Ouroboros.Network.TxSubmission.Outbound as TxOutbound
 import Ouroboros.Network.Server.ConnectionTable (ConnectionTable)
-import Ouroboros.Storage.ChainDB.API (ChainDB)
-import Ouroboros.Storage.ChainDB.Impl.Types (TraceEvent (..), TraceAddBlockEvent (..), TraceValidationEvent (..))
+import Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
+import Ouroboros.Consensus.Storage.ChainDB.Impl.Types (TraceEvent (..), TraceAddBlockEvent (..), TraceValidationEvent (..))
+
+import Ouroboros.Network.IOManager (AssociateWithIOCP, withIOManager)
+import Ouroboros.Network.Snocket (socketSnocket)
 
 import qualified Byron
 import DB (DBConfig (..), withDB)
@@ -319,48 +322,52 @@ cliParserInfo = Opt.info cliParser infoMod
     <> Opt.fullDesc
 
 runShelleyServer
-  :: Tracer IO (WithAddr Network.SockAddr ErrorPolicyTrace)
+  :: AssociateWithIOCP
+  -> Tracer IO (WithAddr Network.SockAddr ErrorPolicyTrace)
   -> Address
   -> ResourceRegistry IO
   -> ConnectionTable IO Network.SockAddr
   -> Shelley.ResponderVersions
   -> IO Void
-runShelleyServer tracer addr _ _ rversions = do
+runShelleyServer iocp tracer addr _ _ rversions = do
   addrInfo <- resolveAddress addr
   networkState <- newNetworkMutableState
   withServer
+    (socketSnocket iocp)
     NetworkServerTracers {
         nstMuxTracer = nullTracer,
         nstHandshakeTracer = nullTracer,
         nstErrorPolicyTracer = tracer
     }
     networkState
-    addrInfo
+    (Network.addrAddress addrInfo)
     rversions
     errorPolicy
   where
     -- TODO: We might need some additional proxy-specific policies
-    errorPolicy = networkErrorPolicy <> consensusErrorPolicy
+    errorPolicy :: ErrorPolicies
+    errorPolicy = networkErrorPolicy <> consensusErrorPolicy (Proxy :: Proxy ByronBlock)
 
 
 runShelleyClient
-  :: ( )
-  => Tracer IO (WithAddr Network.SockAddr ErrorPolicyTrace)
+  :: AssociateWithIOCP
+  -> Tracer IO (WithAddr Network.SockAddr ErrorPolicyTrace)
   -> [Address]
   -> ResourceRegistry IO
   -> ConnectionTable IO Network.SockAddr
   -> Shelley.InitiatorVersions
   -> IO Void
-runShelleyClient tracer producerAddrs _ _ iversions = do
+runShelleyClient iocp tracer producerAddrs _ _ iversions = do
   -- Expect AddrInfo, convert to SockAddr, then pass to ipSubscriptionWorker
   sockAddrs <- mapM resolveAddress producerAddrs
   networkState <- newNetworkMutableState -- TODO: Ideally should share state with runShelleyServer
   ipSubscriptionWorker
-    NetworkIPSubscriptionTracers {
-        nistMuxTracer = nullTracer,
-        nistHandshakeTracer = nullTracer,
-        nistErrorPolicyTracer = tracer,
-        nistSubscriptionTracer = nullTracer
+    (socketSnocket iocp)
+    NetworkSubscriptionTracers {
+        nsMuxTracer          = nullTracer,
+        nsHandshakeTracer    = nullTracer,
+        nsErrorPolicyTracer  = tracer,
+        nsSubscriptionTracer = nullTracer
     }
     networkState
     SubscriptionParams {
@@ -378,11 +385,12 @@ runShelleyClient tracer producerAddrs _ _ iversions = do
     iversions
   where
     -- TODO: We might need some additional proxy-specific policies
-    errorPolicy = networkErrorPolicy <> consensusErrorPolicy
+        errorPolicy = networkErrorPolicy <> consensusErrorPolicy (Proxy :: Proxy ByronBlock)
 
 -- | Error policies for a trusted deployment (behind a firewall).
 --
-networkErrorPolicy :: ErrorPolicies Network.SockAddr a
+
+networkErrorPolicy :: ErrorPolicies
 networkErrorPolicy = ErrorPolicies {
     epAppErrorPolicies = [
         -- Handshake client protocol error: we either did not recognise received
@@ -394,9 +402,9 @@ networkErrorPolicy = ErrorPolicies {
 
         -- exception thrown by `runDecoderWithByteLimit`; we received to
         -- many bytes from the network.
-      , ErrorPolicy
-          $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
-                 -> Just theyBuggy
+--      , ErrorPolicy
+--          $ \(_ :: DecoderFailureOrTooMuchInput DeserialiseFailure)
+--                 -> Just theyBuggy
 
         -- deserialisation failure;  It means that the remote peer has
         -- a bug.
@@ -416,9 +424,7 @@ networkErrorPolicy = ErrorPolicies {
                       MuxUnknownMiniProtocol  -> Just theyBuggy
                       MuxDecodeError          -> Just theyBuggy
                       MuxIngressQueueOverRun  -> Just theyBuggy
-                      MuxControlProtocolError -> Just theyBuggy
-                      MuxTooLargeMessage      -> Just theyBuggy
-
+                      MuxInitiatorOnly        -> Just theyBuggy
                       -- in case of bearer closed / or IOException we do
                       -- not suspend the peer, it can resume immediately
                       MuxBearerClosed         -> Nothing
@@ -444,10 +450,7 @@ networkErrorPolicy = ErrorPolicies {
         -- If `connect` thrown an exception, try to re-connect to the peer after
         -- a short delay
         ErrorPolicy $ \(_ :: IOException) -> Just (SuspendConsumer shortDelay)
-      ],
-
-      -- impossible happened, since none of the protocol terminates
-      epReturnCallback = \_ _ _ -> ourBug
+      ]
     }
   where
     misconfiguredPeer :: SuspendDecision DiffTime
@@ -455,9 +458,6 @@ networkErrorPolicy = ErrorPolicies {
 
     theyBuggy :: SuspendDecision DiffTime
     theyBuggy = SuspendPeer shortDelay shortDelay
-
-    ourBug :: SuspendDecision DiffTime
-    ourBug = Throw
 
     shortDelay :: DiffTime
     shortDelay = 10 -- seconds
@@ -533,7 +533,7 @@ defineSeverity it = case it of
   ErrorPolicyAcceptException {} -> Monitoring.Error
 
 main :: IO ()
-main = do
+main = withIOManager $ \iocp -> do
   bpo <- Opt.execParser cliParserInfo
   Logging.withLogging (bpoLoggerConfigPath bpo) "cardano_byron_proxy" $ \trace -> do
     -- We always need the cardano-sl configuration, even if we're not
@@ -602,9 +602,7 @@ main = do
         let Tracer doConvertedTrace = Logging.convertTrace trace
             dbTracer :: Tracer IO (TraceEvent ByronBlock)
             dbTracer = Tracer $ \trEvent -> case trEvent of
-              TraceAddBlockEvent (AddedBlockToVolDB point (BlockNo blockno) _) -> case point of
-                Point Origin -> pure ()
-                Point (At _) ->
+              TraceAddBlockEvent (AddedBlockToVolDB _point (BlockNo blockno) _) ->
                   -- NB this is here because devops wanted an EKG metric on
                   -- block count. FIXME should be done in a more sane way...
                   let val  = Monitoring.PureI (fromIntegral blockno)
@@ -659,12 +657,14 @@ main = do
             let shelleyClientTracer = contramap (\it -> ("shelley.client", defineSeverity (wiaEvent it), fromString (show it))) (Logging.convertTrace' trace)
                 shelleyServerTracer = contramap (\it -> ("shelley.server", defineSeverity (wiaEvent it), fromString (show it))) (Logging.convertTrace' trace)
             Shelley.withShelley rr cdb nodeConfig nodeState btime $ \kernel ctable iversions rversions -> do
-              let server = runShelleyServer shelleyServerTracer
+              let server = runShelleyServer iocp
+                                            shelleyServerTracer
                                             (soLocalAddress (bpoShelleyOptions bpo))
                                             rr
                                             ctable
                                             rversions
-                  client = runShelleyClient shelleyClientTracer
+                  client = runShelleyClient iocp
+                                            shelleyClientTracer
                                             (soProducerAddresses (bpoShelleyOptions bpo))
                                             rr
                                             ctable
@@ -679,7 +679,7 @@ main = do
                       (Reflection.given :: CSL.UpdateConfiguration)
                       (Reflection.given :: CSL.NodeConfiguration)
                       epochSlots
-                      (protocolSecurityParam nodeConfig)
+                      (configSecurityParam nodeConfig)
                       idx
                       cdb
                       (getMempool kernel)

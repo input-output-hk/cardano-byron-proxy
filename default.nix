@@ -51,7 +51,7 @@ let
         pkgconfig
         sqlite-interactive
         tmux
-        commonLib.cabalProjectRegenerate
+#        commonLib.cabalProjectRegenerate
       ]);
 
       # Prevents cabal from choosing alternate plans, so that

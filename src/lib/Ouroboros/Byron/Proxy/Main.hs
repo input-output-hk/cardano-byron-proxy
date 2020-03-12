@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE PatternSynonyms     #-}
 
 {-# OPTIONS_GHC "-fwarn-incomplete-patterns" #-}
 
@@ -125,9 +126,10 @@ import           Ouroboros.Byron.Proxy.Index.Types         (Index)
 import qualified Ouroboros.Byron.Proxy.Index.Types         as Index
 import           Ouroboros.Byron.Proxy.Genesis.Convert     (convertEpochSlots)
 import           Ouroboros.Consensus.Block                 (getHeader)
-import           Ouroboros.Consensus.Ledger.Byron          (GenTx(ByronTx),
-                                                            encodeByronBlock,
+import           Ouroboros.Consensus.Byron.Ledger.Mempool  (GenTx(ByronTx),
                                                             fromMempoolPayload)
+import           Ouroboros.Consensus.Byron.Ledger.Serialisation
+                                                           (encodeByronBlock)
 import           Ouroboros.Consensus.Mempool.API           (GenTxId,
                                                             Mempool)
 import qualified Ouroboros.Consensus.Mempool.API           as Mempool
@@ -136,13 +138,16 @@ import           Ouroboros.Consensus.NodeKernel            (getMempoolReader,
                                                             getMempoolWriter)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
-import           Ouroboros.Network.Block                   (ChainUpdate (..),
-                                                            Point (..))
-import qualified Ouroboros.Network.Point                   as Point (block)
+import           Ouroboros.Network.Block                   (ChainUpdate (..))
 import qualified Ouroboros.Network.TxSubmission.Inbound    as Tx.In
-import qualified Ouroboros.Network.TxSubmission.Outbound   as Tx.Out
-import           Ouroboros.Storage.ChainDB.API             (ChainDB)
-import qualified Ouroboros.Storage.ChainDB.API             as ChainDB
+import           Ouroboros.Network.TxSubmission.Mempool.Reader
+                                                           ( TxSubmissionMempoolReader (..)
+                                                           , MempoolSnapshot (..))
+
+import           Ouroboros.Consensus.Storage.ChainDB.API   (ChainDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.API   as ChainDB
+import           Ouroboros.Consensus.Block.RealPoint       (pattern RealPoint
+                                                           ,realPointToPoint)
 
 -- | Configuration used to get a 'ByronProxy'.
 -- 'configFromGenesis' will make one from a genesis configuration.
@@ -276,18 +281,18 @@ txKeyValFromMempool mempool txTicketMapVar = KeyVal
     ptag = Proxy
     keyFromValue :: TxMsgContents -> TxId
     keyFromValue = hash . taTx . getTxMsgContents
-    reader :: Tx.Out.TxSubmissionMempoolReader (GenTxId ByronBlock) (GenTx ByronBlock) TicketNo IO
+    reader :: TxSubmissionMempoolReader (GenTxId ByronBlock) (GenTx ByronBlock) TicketNo IO
     reader = getMempoolReader mempool
     writer :: Tx.In.TxSubmissionMempoolWriter (GenTxId ByronBlock) (GenTx ByronBlock) TicketNo IO
     writer = getMempoolWriter mempool
     lookupTx :: Tagged TxMsgContents TxId -> IO (Maybe TxMsgContents)
     lookupTx = \txId -> atomically $ do
-      snapshot <- Tx.Out.mempoolGetSnapshot reader
+      snapshot <- mempoolGetSnapshot reader
       ticketMap <- readTVar txTicketMapVar
       let outcome :: Maybe (Cardano.ATxAux ByteString)
           outcome = do
             ticketNo <- Map.lookup (untag txId) ticketMap
-            image <- Tx.Out.mempoolLookupTx snapshot ticketNo
+            image <- mempoolLookupTx snapshot ticketNo
             fmap snd (pickMoneyTransaction image)
       pure $ fmap toByronTxMsgContents outcome
 
@@ -489,7 +494,7 @@ bbsStreamBlocks rr idx db _ hh f yieldFirst k = do
       -- Must include the block _at_ the start point, so we can't go straight
       -- to the reader API: advancing a reader to a given point means the
       -- block at the point will not come out of the reader.
-      let point = Point (Point.block slotNo (coerceHashFromLegacy hh))
+      let point = (RealPoint slotNo (coerceHashFromLegacy hh))
       mStartBlock <- ChainDB.getBlock db point
       case mStartBlock of
         Nothing -> k (pure ())
@@ -498,7 +503,7 @@ bbsStreamBlocks rr idx db _ hh f yieldFirst k = do
           -- reader will actually move forward to it. The only case in which it
           -- wouldn't is due to a fork, and legacy Byron API can't deal with that
           -- anyway...
-          _ <- ChainDB.readerForward rdr [point]
+          _ <- ChainDB.readerForward rdr [realPointToPoint point]
           -- ChainDB docs say we must expect this rollback
           mInstruction <- ChainDB.readerInstruction rdr
           case mInstruction of
@@ -535,7 +540,7 @@ bbsGetSerializedBlock _ idx db hh = do
     Nothing -> pure Nothing
     Just slotNo -> (fmap . fmap) toSerializedBlock (ChainDB.getBlock db point)
       where
-      point = Point (Point.block slotNo (coerceHashFromLegacy hh))
+      point = RealPoint slotNo (coerceHashFromLegacy hh)
 
 bbsGetBlockHeader
   :: EpochSlots
@@ -559,7 +564,7 @@ bbsGetBlockHeader _ idx db onErr hh = do
           Left  err       -> onErr err
           Right legacyBlk -> pure $ Just $ Byron.Legacy.getBlockHeader legacyBlk
       where
-      point = Point (Point.block slotNo (coerceHashFromLegacy hh))
+      point = RealPoint slotNo (coerceHashFromLegacy hh)
 
 -- TODO we're supposed to give 'Either GetHashesRangeError' but let's
 -- fill that in later at the use site.
@@ -589,8 +594,8 @@ bbsGetHashesRange rr idx db onErr mLimit from to = do
       where
       streamFrom = ChainDB.StreamFromInclusive fromPoint
       streamTo   = ChainDB.StreamToInclusive   toPoint
-      fromPoint = Point (Point.block fromSlot (coerceHashFromLegacy from))
-      toPoint   = Point (Point.block toSlot   (coerceHashFromLegacy to))
+      fromPoint = RealPoint fromSlot (coerceHashFromLegacy from)
+      toPoint   = RealPoint toSlot   (coerceHashFromLegacy to)
     _ -> pure Nothing
   where
 
