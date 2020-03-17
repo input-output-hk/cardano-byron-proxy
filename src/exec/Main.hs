@@ -495,9 +495,12 @@ runByron tracer byronOptions genesisConfig blockConfig updateConfig nodeConfig e
                 networkConfig'
                 64 -- Batch size.
                 trace
-        genesisBlock = CSL.genesisBlock0 (CSL.configProtocolMagic genesisConfig)
-                                         (CSL.configGenesisHash genesisConfig)
-                                         (CSL.genesisLeaders genesisConfig)
+        genesisBlock =
+          CSL.genesisBlock0
+            (CSL.consensusEraBVD (CSL.configBlockVersionData genesisConfig))
+            (CSL.configProtocolMagic genesisConfig)
+            (CSL.configGenesisHash genesisConfig)
+            (CSL.genesisLeaders genesisConfig)
     -- *MUST* launch static config monitoring thread, otherwise nodes
     -- configured with static routes *will not update their peers lists*.
     -- It would be much better if intNetworkConfigOpts set up the static

@@ -270,113 +270,113 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: lib
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: binary
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: binary/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: util
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: util/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: infra
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: infra/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: core
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: core/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: chain
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: chain/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: db
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: db/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: crypto
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: crypto/test
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/cardano-sl
-  tag: a4c7991852017b8a24ad197050600d593a2e07cb
-  --sha256: 0m0nrxfzgp9ryjnfjrl7hwqb27d3cpdng927fx6jvxca3c749vdm
+  tag: ff10fcb2c6706175df57bb8b9c8008231a8fbe18
+  --sha256: 1n6as8hhdkacm7ivir8138x2jh6ym473lpqzx6zyy2b6nw4j27mw
   subdir: networking
 
 source-repository-package
