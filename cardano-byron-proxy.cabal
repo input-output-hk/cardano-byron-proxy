@@ -1,5 +1,5 @@
 name:                cardano-byron-proxy
-version:             1.0.4
+version:             1.0.5
 synopsis:            Cardano Byron network proxy for the old and new network protocols.
 -- description:
 homepage:            https://github.com/input-output-hk/cardano-byron-proxy
