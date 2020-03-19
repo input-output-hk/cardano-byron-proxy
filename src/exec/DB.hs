@@ -17,19 +17,20 @@ import           Ouroboros.Byron.Proxy.Block               (ByronBlock)
 import qualified Ouroboros.Byron.Proxy.Index.ChainDB       as Index (trackChainDB)
 import qualified Ouroboros.Byron.Proxy.Index.Sqlite        as Sqlite
 import           Ouroboros.Byron.Proxy.Index.Types         (Index)
-import           Ouroboros.Consensus.Block                 (BlockProtocol,
-                                                            GetHeader (Header))
+import           Ouroboros.Consensus.Block                 (GetHeader (Header))
 import           Ouroboros.Consensus.BlockchainTime        (BlockchainTime)
-import           Ouroboros.Consensus.Ledger.Byron.Config   (pbftEpochSlots)
 import           Ouroboros.Consensus.Ledger.Extended       (ExtLedgerState)
 import           Ouroboros.Consensus.Node                  (openChainDB)
-import           Ouroboros.Consensus.Protocol              (NodeConfig)
-import           Ouroboros.Consensus.Protocol.ExtConfig    (extNodeConfig)
 import           Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
 import qualified Ouroboros.Consensus.Util.ResourceRegistry as ResourceRegistry
-import           Ouroboros.Storage.ChainDB                 (ChainDB)
-import qualified Ouroboros.Storage.ChainDB                 as ChainDB
-import           Ouroboros.Storage.ChainDB.Impl.Args       (ChainDbArgs (..))
+import           Ouroboros.Consensus.Storage.ChainDB.API (ChainDB)
+import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.Args (ChainDbArgs (..))
+import           Ouroboros.Consensus.Config                (TopLevelConfig, configBlock)
+import           Ouroboros.Consensus.Byron.Ledger.Config   (byronEpochSlots)
+import           Ouroboros.Consensus.Byron.Node ()
+import           Ouroboros.Consensus.Storage.ChainDB.Impl.Types as ChainDB (TraceEvent)
+import           Ouroboros.Consensus.Storage.VolatileDB.Types (mkBlocksPerFile)
 
 data DBConfig = DBConfig
   { dbFilePath    :: !FilePath
@@ -41,6 +42,7 @@ data DBConfig = DBConfig
 -- | Set up and use a DB.
 --
 -- The directory at `dbFilePath` will be created if it does not exist.
+
 withDB
   :: forall t .
      DBConfig
@@ -48,7 +50,7 @@ withDB
   -> Tracer IO Sqlite.TraceEvent
   -> ResourceRegistry IO
   -> BlockchainTime IO
-  -> NodeConfig (BlockProtocol ByronBlock)
+  -> TopLevelConfig ByronBlock
   -> ExtLedgerState ByronBlock
   -> (Index IO (Header ByronBlock) -> ChainDB IO ByronBlock -> IO t)
   -> IO t
@@ -67,10 +69,10 @@ withDB dbOptions dbTracer indexTracer rr btime nodeConfig extLedgerState k = do
   where
 
   epochSlots :: Cardano.EpochSlots
-  epochSlots = pbftEpochSlots $ extNodeConfig nodeConfig
+  epochSlots = byronEpochSlots $ configBlock nodeConfig
 
   customiseArgs :: ChainDbArgs IO ByronBlock -> ChainDbArgs IO ByronBlock
   customiseArgs args = args
-    { cdbBlocksPerFile = 21600 -- ?
+    { cdbBlocksPerFile = mkBlocksPerFile 21600 -- ?
     , cdbGcDelay = secondsToDiffTime 20
     }

@@ -1,5 +1,5 @@
 name:                cardano-byron-proxy
-version:             1.0.4
+version:             1.0.5
 synopsis:            Cardano Byron network proxy for the old and new network protocols.
 -- description:
 homepage:            https://github.com/input-output-hk/cardano-byron-proxy
@@ -50,6 +50,7 @@ library
                        memory,
                        network-mux,
                        ouroboros-consensus,
+                       ouroboros-consensus-byron,
                        ouroboros-network,
                        resourcet,
                        sqlite-simple,
@@ -111,7 +112,9 @@ executable cardano-byron-proxy
                        network-mux,
                        optparse-applicative,
                        ouroboros-consensus,
+                       ouroboros-consensus-byron,
                        ouroboros-network,
+                       ouroboros-network-framework,
                        random,
                        reflection,
                        resourcet,

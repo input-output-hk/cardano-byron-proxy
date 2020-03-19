@@ -20,6 +20,7 @@ import Data.Time.Clock (NominalDiffTime, UTCTime)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Word (Word16)
 import Numeric.Natural (Natural)
+import GHC.Real ((%))
 
 import qualified Cardano.Binary as Binary
 import qualified Cardano.Chain.Common as Cardano
@@ -103,9 +104,9 @@ convertGenesisInitializer :: CSL.GenesisInitializer -> Cardano.GenesisInitialize
 convertGenesisInitializer gi = Cardano.GenesisInitializer
   { Cardano.giTestBalance = convertTestnetBalanceOptions (CSL.giTestBalance gi)
   , Cardano.giFakeAvvmBalance = convertFakeAvvmOptions (CSL.giFakeAvvmBalance gi)
-  , Cardano.giAvvmBalanceFactor = convertCoinPortion (CSL.giAvvmBalanceFactor gi)
+  , Cardano.giAvvmBalanceFactor = toRational
+      (CSL.getCoinPortion (CSL.giAvvmBalanceFactor gi) % CSL.coinPortionDenominator)
   , Cardano.giUseHeavyDlg = CSL.giUseHeavyDlg gi
-  , Cardano.giSeed = CSL.giSeed gi
   }
 
 convertTestnetBalanceOptions :: CSL.TestnetBalanceOptions -> Cardano.TestnetBalanceOptions
@@ -113,10 +114,7 @@ convertTestnetBalanceOptions tbo = Cardano.TestnetBalanceOptions
   { Cardano.tboPoors = CSL.tboPoors tbo
   , Cardano.tboRichmen = CSL.tboRichmen tbo
   , Cardano.tboTotalBalance = either (error . show) id (Cardano.mkLovelace (CSL.tboTotalBalance tbo))
-  -- CSL uses a Double, presumably in [0,1]
-  -- Cardano uses a LovelacePortion, or Word64, the numerator over the
-  -- maximum lovelace value 1e15.
-  , Cardano.tboRichmenShare = either (error . show) id (Cardano.lovelacePortionFromDouble (CSL.tboRichmenShare tbo))
+  , Cardano.tboRichmenShare = toRational $ CSL.tboRichmenShare tbo
   }
 
 convertFakeAvvmOptions :: CSL.FakeAvvmOptions -> Cardano.FakeAvvmOptions
@@ -138,7 +136,8 @@ convertCoin :: CSL.Coin -> Cardano.Lovelace
 convertCoin = either (error . show) id . Cardano.mkLovelace . CSL.getCoin
 
 convertCoinPortion :: CSL.CoinPortion -> Cardano.LovelacePortion
-convertCoinPortion = Cardano.LovelacePortion . CSL.getCoinPortion
+convertCoinPortion x
+  = Cardano.rationalToLovelacePortion $ toRational (CSL.getCoinPortion x % CSL.coinPortionDenominator)
 
 -- Serokell.Data.Memory.Units.Byte -> Natural
 -- I don't want to import serokell-util so we leave it open for any Enum.
