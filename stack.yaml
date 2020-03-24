@@ -2,6 +2,7 @@ resolver: https://raw.githubusercontent.com/input-output-hk/cardano-prelude/0048
 
 packages:
   - .
+  - ./cardano-api
 
 extra-deps:
 

@@ -9,20 +9,19 @@ import Control.Exception (bracket)
 
 import Ouroboros.Byron.Proxy.Index.Types (Index)
 import qualified Ouroboros.Byron.Proxy.Index.Types as Index
-import Ouroboros.Consensus.Block (GetHeader (Header))
-import Ouroboros.Consensus.Util.ResourceRegistry (ResourceRegistry)
-import Ouroboros.Network.Block (ChainUpdate (..), Point (..))
+
+import Cardano.Client.Byron
+
+import Ouroboros.Network.Block as Block (ChainUpdate (..), Point (..))
 import Ouroboros.Network.Point (WithOrigin (Origin))
-import Ouroboros.Consensus.Storage.ChainDB.API (ChainDB, Reader)
 import Ouroboros.Consensus.Storage.Common (BlockComponent (..))
 import qualified Ouroboros.Consensus.Storage.ChainDB.API as ChainDB
 
 -- | Reapaetedly take the reader instruction and update the index accordingly.
 trackReaderBlocking
-  :: ( Monad m )
-  => Index m (Header blk)
-  -> Reader m blk (Header blk)
-  -> m x
+  :: Index IO Header
+  -> HeaderReader
+  -> IO x
 trackReaderBlocking idx reader = do
   instruction <- ChainDB.readerInstructionBlocking reader
   case instruction of
@@ -30,16 +29,15 @@ trackReaderBlocking idx reader = do
       Index.rollforward idx blk
       trackReaderBlocking idx reader
     RollBack pnt -> do
-      Index.rollbackward idx (getPoint pnt)
+      Index.rollbackward idx (Block.getPoint pnt)
       trackReaderBlocking idx reader
 
 -- | Do reader instructions to update the index, until there is no more
 -- instruction.
 trackReader
-  :: ( Monad m )
-  => Index m (Header blk)
-  -> Reader m blk (Header blk)
-  -> m ()
+  :: Index IO Header
+  -> HeaderReader
+  ->IO ()
 trackReader idx reader = do
   mInstruction <- ChainDB.readerInstruction reader
   case mInstruction of
@@ -47,7 +45,7 @@ trackReader idx reader = do
       Index.rollforward idx blk
       trackReader idx reader
     Just (RollBack pnt) -> do
-      Index.rollbackward idx (getPoint pnt)
+      Index.rollbackward idx (Block.getPoint pnt)
       trackReader idx reader
     Nothing -> pure ()
 
@@ -66,10 +64,9 @@ trackReader idx reader = do
 -- better to check the newest slot older than `k` back from tip of index, and
 -- go from there.
 trackChainDB
-  :: forall blk void .
-     ResourceRegistry IO
-  -> Index IO (Header blk)
-  -> ChainDB IO blk
+  :: ResourceRegistry IO
+  -> Index IO Header
+  -> ChainDB
   -> IO void
 trackChainDB rr idx cdb = bracket acquireReader releaseReader $ \rdr -> do
   tipPoint <- Index.tip idx
@@ -86,7 +83,7 @@ trackChainDB rr idx cdb = bracket acquireReader releaseReader $ \rdr -> do
   -- ... then attempt to stay in sync.
   trackReaderBlocking idx rdr
   where
-  acquireReader :: IO (Reader IO blk (Header blk))
+  acquireReader :: IO HeaderReader
   acquireReader = ChainDB.traverseReader id <$> ChainDB.newReader cdb rr GetHeader
-  releaseReader :: Reader IO blk (Header blk) -> IO ()
+  releaseReader :: HeaderReader -> IO ()
   releaseReader = ChainDB.readerClose

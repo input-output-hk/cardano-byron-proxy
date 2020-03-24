@@ -1,7 +1,9 @@
 index-state: 2020-01-31T00:00:00Z
 
-packages: cardano-byron-proxy.cabal
-
+packages:
+  cardano-byron-proxy.cabal
+  cardano-api/cardano-api.cabal
+    
 constraints:
     ip < 1.5
   , canonical-json >= 0.6.0.0
