@@ -9,8 +9,8 @@ let
   iohkNix = import sources.iohk-nix {
     sourcesOverride = sources;
   };
-  haskellNix = import sources."haskell.nix";
-  args = haskellNix // {
+  haskellNix = import sources."haskell.nix" {};
+  args = haskellNix.nixpkgsArgs // {
     inherit system crossSystem;
     overlays = (haskellNix.overlays or []) ++ overlays;
     config = (haskellNix.config or {}) // config;
